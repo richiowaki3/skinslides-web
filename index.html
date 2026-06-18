@@ -72,11 +72,14 @@
         <video id="player-3" class="screen" muted playsinline></video>
     </div>
     
-    <!-- 音声用/不可視第4画面 -->
-    <video id="player-4" playsinline></video>
+    <!-- 音声用/不可視第4プレイヤー（HTML5 Audio） -->
+    <audio id="player-4"></audio>
 
-    <!-- ※ローカル環境テスト用のダミーパス等に対応するため、実際の動画配置ディレクトリに合わせて変更してください -->
-    <script>const VIDEO_BASE_PATH = "videos/";</script>
+    <!-- メディアパスの設定 -->
+    <script>
+        const VIDEO_BASE_PATH = "videos/";
+        const AUDIO_BASE_PATH = "audios/";
+    </script>
     <script src="player.js"></script>
     <script src="logic.js"></script>
 </body>

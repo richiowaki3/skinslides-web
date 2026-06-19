@@ -253,12 +253,18 @@ function reactScreenWithVideo(screenNum, event) {
     if (videoData) {
         const videoFileName = videoData[0]; // filename (e.g. "01.mov")
         
+        let finalVideoName = videoFileName;
+        const match = videoFileName.match(/(\d+)\.(mov|mp4)/i);
+        if (match) {
+            finalVideoName = `${match[1]}-Sss720p.mp4`;
+        }
+        
         // Load and play video
-        video.src = VIDEO_BASE_PATH + videoFileName;
+        video.src = VIDEO_BASE_PATH + finalVideoName;
         video.play().then(() => {
             video.classList.add("playing");
         }).catch(err => {
-            console.warn(`[demo] Video file not found: ${videoFileName}. Visualizing triggers only.`);
+            console.warn(`[demo] Video file not found: ${finalVideoName}. Visualizing triggers only.`);
         });
 
         // Setup end handler

@@ -11,7 +11,17 @@ class VideoPlayer {
         return new Promise((resolve) => {
             // パスを設定してメディア（動画または音声）をロード
             const basePath = this.isHiddenAudioOnly ? AUDIO_BASE_PATH : VIDEO_BASE_PATH;
-            this.mediaEl.src = basePath + fileName;
+            
+            let finalFileName = fileName;
+            if (!this.isHiddenAudioOnly) {
+                // 動画の場合は R2 のファイル名規則にマッピングする (例: "01.mov" -> "01-Sss720p.mp4")
+                const match = fileName.match(/(\d+)\.(mov|mp4)/i);
+                if (match) {
+                    finalFileName = `${match[1]}-Sss720p.mp4`;
+                }
+            }
+            
+            this.mediaEl.src = basePath + finalFileName;
             this.mediaEl.volume = 1.0; // ボリュームを戻す（フェードアウト後を考慮）
             
             // 再生開始

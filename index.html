@@ -77,8 +77,11 @@
 
     <!-- メディアパスの設定 -->
     <script>
-        const VIDEO_BASE_PATH = "videos/";
-        const AUDIO_BASE_PATH = "audios/";
+        const R2_BASE_URL = 'https://pub-b863fe2ba58a4525be0263e22ceb85a5.r2.dev/';
+        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        
+        const VIDEO_BASE_PATH = R2_BASE_URL;
+        const AUDIO_BASE_PATH = isLocal ? "audios/" : R2_BASE_URL;
     </script>
     <script src="player.js"></script>
     <script src="logic.js"></script>

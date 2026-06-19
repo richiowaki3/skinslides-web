@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>skinslides - Audio Trigger Demo & Monitor</title>
+    <!-- Import Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Noto+Sans+JP:wght@300;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #050508;
+            --card-bg: rgba(15, 15, 25, 0.6);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --accent-green: #00ffaa;
+            --accent-blue: #00bfff;
+            --accent-orange: #ff7700;
+            --text-color: #f0f2f5;
+            --text-muted: #8892b0;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            background-image: radial-gradient(circle at 50% -20%, #1a1a3a 0%, #050508 60%);
+            color: var(--text-color);
+            font-family: 'Outfit', 'Noto Sans JP', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            overflow-x: hidden;
+        }
+
+        header {
+            width: 100%;
+            max-width: 1200px;
+            padding: 20px;
+            box-sizing: border-box;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .brand {
+            font-weight: 800;
+            font-size: 1.5rem;
+            letter-spacing: 2px;
+            background: linear-gradient(45deg, var(--accent-blue), var(--accent-green));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .badge {
+            background: rgba(0, 255, 170, 0.1);
+            border: 1px solid var(--accent-green);
+            color: var(--accent-green);
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            letter-spacing: 1px;
+        }
+
+        .main-container {
+            width: 100%;
+            max-width: 1200px;
+            padding: 20px;
+            box-sizing: border-box;
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            gap: 30px;
+            flex: 1;
+        }
+
+        /* 左側のモニタリングダッシュボード */
+        .dashboard {
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            height: fit-content;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
+        .section-title {
+            font-size: 1rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            margin: 0 0 10px 0;
+            border-left: 3px solid var(--accent-blue);
+            padding-left: 10px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        select, button {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        select:focus, select:hover {
+            border-color: var(--accent-blue);
+            outline: none;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .btn-play {
+            background: linear-gradient(135deg, #0088ff 0%, #00bfff 100%);
+            border: none;
+            font-weight: 600;
+            letter-spacing: 1px;
+            box-shadow: 0 4px 15px rgba(0, 191, 255, 0.3);
+        }
+
+        .btn-play:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 191, 255, 0.5);
+        }
+
+        .btn-play:active {
+            transform: translateY(0);
+        }
+
+        /* 再生モニター表示 */
+        .status-display {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            padding: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.03);
+        }
+
+        .status-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+        }
+
+        .status-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .status-label {
+            color: var(--text-muted);
+        }
+
+        .status-value {
+            font-weight: 600;
+            color: var(--text-color);
+        }
+
+        .status-value.accent {
+            color: var(--accent-green);
+        }
+
+        /* タイムラインモニター */
+        .log-panel {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            height: 250px;
+            overflow-y: auto;
+            padding: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.02);
+            font-family: monospace;
+            font-size: 0.8rem;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            scroll-behavior: smooth;
+        }
+
+        .log-entry {
+            display: flex;
+            gap: 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+            padding-bottom: 4px;
+        }
+
+        .log-time {
+            color: var(--accent-blue);
+            min-width: 50px;
+        }
+
+        .log-type {
+            font-weight: bold;
+        }
+
+        .log-type.attack { color: var(--accent-orange); }
+        .log-type.swell { color: var(--accent-blue); }
+        .log-type.roll { color: var(--accent-green); }
+
+        .log-msg {
+            color: #ccc;
+        }
+
+        /* 右側のメインスクリーンエリア */
+        .display-area {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .screen-container {
+            display: flex;
+            justify-content: space-between;
+            gap: 20px;
+            width: 100%;
+        }
+
+        .screen-wrapper {
+            position: relative;
+            width: 250px;
+            height: 443px; /* 9:16 ratio */
+            border-radius: 12px;
+            overflow: hidden;
+            background-color: #000;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            transition: all 0.3s ease;
+        }
+
+        .screen-wrapper.active {
+            border-color: var(--accent-green);
+            box-shadow: 0 0 20px rgba(0, 255, 170, 0.25);
+        }
+
+        .screen {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+
+        .screen.playing {
+            opacity: 1;
+        }
+
+        .screen-label {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(4px);
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            z-index: 10;
+        }
+
+        /* オノマトペポップアップオーバーレイ */
+        .onomatopoeia-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        .ono-text {
+            color: #ffffff;
+            font-family: 'Noto Sans JP', sans-serif;
+            font-weight: 800;
+            font-size: 2.2rem;
+            white-space: nowrap;
+            letter-spacing: 2px;
+            text-shadow: 
+                0 0 10px rgba(255, 255, 255, 0.9), 
+                0 0 20px var(--accent-green), 
+                0 0 30px var(--accent-green);
+            opacity: 0;
+            transform: scale(0.3) rotate(-5deg);
+            transition: all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .ono-text.show {
+            opacity: 1;
+            transform: scale(1.0) rotate(5deg);
+        }
+
+        /* 特有のオノマトペスタイル */
+        .ono-text.attack {
+            text-shadow: 
+                0 0 10px #fff,
+                0 0 20px var(--accent-orange),
+                0 0 30px var(--accent-orange);
+            color: #fff;
+        }
+
+        .ono-text.swell {
+            text-shadow: 
+                0 0 10px #fff,
+                0 0 20px var(--accent-blue),
+                0 0 30px var(--accent-blue);
+            color: #fff;
+        }
+
+        .ono-text.roll {
+            text-shadow: 
+                0 0 10px #fff,
+                0 0 20px var(--accent-green),
+                0 0 30px var(--accent-green);
+            color: #fff;
+        }
+
+        /* 再生バー */
+        .progress-container {
+            width: 100%;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 3px;
+            position: relative;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+
+        .progress-bar {
+            width: 0%;
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent-blue), var(--accent-green));
+            border-radius: 3px;
+            transition: width 0.1s linear;
+        }
+
+        /* HTML5オーディオは不可視に配置 */
+        #audio-element {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="brand">skinslides</div>
+        <div class="badge">Audio Trigger Demo & Monitor</div>
+    </header>
+
+    <div class="main-container">
+        <!-- ダッシュボード (左側) -->
+        <div class="dashboard">
+            <div class="control-group">
+                <h3 class="section-title">Select Track</h3>
+                <select id="track-select">
+                    <option value="" disabled selected>Loading audio tracks...</option>
+                </select>
+                <button id="play-btn" class="btn-play">Play Sequence</button>
+            </div>
+
+            <div class="control-group">
+                <h3 class="section-title">Playback Status</h3>
+                <div class="status-display">
+                    <div class="status-row">
+                        <span class="status-label">Current Time:</span>
+                        <span class="status-value" id="current-time">0.0s / 0.0s</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">Total Triggers:</span>
+                        <span class="status-value" id="total-triggers">0</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">Next Trigger:</span>
+                        <span class="status-value accent" id="next-trigger">--</span>
+                    </div>
+                    <div class="progress-container">
+                        <div class="progress-bar" id="progress-bar"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <h3 class="section-title">Trigger Event Log</h3>
+                <div class="log-panel" id="log-panel">
+                    <div style="color: var(--text-muted);">Wait for playback...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3画面ディスプレイ (右側) -->
+        <div class="display-area">
+            <div class="screen-container">
+                <!-- Screen 1 -->
+                <div class="screen-wrapper" id="wrapper-1">
+                    <span class="screen-label">SCREEN 1</span>
+                    <video id="video-1" class="screen" muted playsinline></video>
+                    <div class="onomatopoeia-overlay">
+                        <div class="ono-text" id="ono-text-1"></div>
+                    </div>
+                </div>
+
+                <!-- Screen 2 -->
+                <div class="screen-wrapper" id="wrapper-2">
+                    <span class="screen-label">SCREEN 2</span>
+                    <video id="video-2" class="screen" muted playsinline></video>
+                    <div class="onomatopoeia-overlay">
+                        <div class="ono-text" id="ono-text-2"></div>
+                    </div>
+                </div>
+
+                <!-- Screen 3 -->
+                <div class="screen-wrapper" id="wrapper-3">
+                    <span class="screen-label">SCREEN 3</span>
+                    <video id="video-3" class="screen" muted playsinline></video>
+                    <div class="onomatopoeia-overlay">
+                        <div class="ono-text" id="ono-text-3"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 不可視のHTML5オーディオ -->
+    <audio id="audio-element"></audio>
+
+    <script>
+        const VIDEO_BASE_PATH = "videos/";
+        const AUDIO_BASE_PATH = "audios/";
+    </script>
+    <script src="audio_trigger_logic.js"></script>
+</body>
+</html>

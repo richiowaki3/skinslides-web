@@ -372,6 +372,44 @@
             </div>
 
             <div class="control-group">
+                <h3 class="section-title">Trigger Mode</h3>
+                <select id="mode-select">
+                    <option value="metadata" selected>Offline Metadata (事前精密データ)</option>
+                    <option value="realtime">Real-time Reactive (リアルタイム解析)</option>
+                </select>
+            </div>
+
+            <!-- リアルタイム・音傾向パラメータ -->
+            <div class="control-group" id="param-group">
+                <h3 class="section-title">Analysis Parameters</h3>
+                <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 10px; display: flex; justify-content: space-between;">
+                    <span>Sound Tendency:</span>
+                    <span id="tendency-badge" style="color: var(--accent-green); font-weight: 700; letter-spacing: 0.5px;">--</span>
+                </div>
+                <div style="margin-bottom: 12px;" id="threshold-container">
+                    <label for="threshold-slider" class="status-label" style="display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px;">
+                        <span>Peak Sensitivity (しきい値)</span>
+                        <span id="threshold-val" style="color: var(--text-color); font-weight: 600;">1.35x</span>
+                    </label>
+                    <input type="range" id="threshold-slider" min="1.05" max="2.0" step="0.05" value="1.35" style="width: 100%; cursor: pointer;">
+                </div>
+                <div id="interval-container">
+                    <label for="interval-slider" class="status-label" style="display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 4px;">
+                        <span>Min Interval (最小間隔)</span>
+                        <span id="interval-val" style="color: var(--text-color); font-weight: 600;">250ms</span>
+                    </label>
+                    <input type="range" id="interval-slider" min="100" max="2000" step="50" value="250" style="width: 100%; cursor: pointer;">
+                </div>
+            </div>
+
+            <!-- 周波数モニター -->
+            <div class="control-group">
+                <h3 class="section-title">Spectral Monitor</h3>
+                <canvas id="visualizer-canvas" height="60" style="width: 100%; background: rgba(0,0,0,0.5); border-radius: 8px; border: 1px solid var(--border-color); box-shadow: inset 0 0 10px rgba(0,0,0,0.8);"></canvas>
+            </div>
+
+
+            <div class="control-group">
                 <h3 class="section-title">Playback Status</h3>
                 <div class="status-display">
                     <div class="status-row">

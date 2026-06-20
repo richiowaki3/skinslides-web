@@ -342,7 +342,7 @@ def main():
         print(f"Error: Input directory does not exist: {input_dir}")
         sys.exit(1)
         
-    valid_extensions = ('.aif', '.aiff', '.siff', '.wav')
+    valid_extensions = ('.aif', '.aiff', '.siff', '.wav', '.mp3')
     all_files = os.listdir(input_dir)
     audio_files = [f for f in all_files if f.lower().endswith(valid_extensions) and not f.startswith('._')]
     

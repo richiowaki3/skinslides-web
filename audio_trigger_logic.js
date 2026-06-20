@@ -16,7 +16,7 @@ const nextTriggerDisplay = document.getElementById("next-trigger");
 const progressBar = document.getElementById("progress-bar");
 const logPanel = document.getElementById("log-panel");
 
-// New UI bindings for parameters and visualizer
+// New UI bindings for parameters and visualizer (with defensive null checks)
 const modeSelect = document.getElementById("mode-select");
 const thresholdSlider = document.getElementById("threshold-slider");
 const thresholdVal = document.getElementById("threshold-val");
@@ -58,6 +58,7 @@ async function loadMetadata() {
 }
 
 function populateTrackSelect() {
+    if (!trackSelect) return;
     trackSelect.innerHTML = '<option value="" disabled selected>Select an audio track...</option>';
     
     // Sort audios by dynamism score for convenience
@@ -75,6 +76,7 @@ function populateTrackSelect() {
 
 // Log viewer helper
 function logMessage(type, message) {
+    if (!logPanel) return;
     const timeStr = new Date().toLocaleTimeString();
     const entry = document.createElement("div");
     entry.className = "log-entry";
@@ -103,14 +105,17 @@ function logMessage(type, message) {
 function handleTrackChange() {
     stopSequence();
     
+    if (!trackSelect) return;
     const fileId = trackSelect.value;
     const trackData = audioMetadataPool.find(t => t.file_id === fileId);
     if (!trackData) return;
 
     // Load MP3 file (mapping .aif to .mp3)
     const mp3FileName = fileId.replace(/\.(aif|aiff)$/i, ".mp3");
-    audioElement.src = AUDIO_BASE_PATH + mp3FileName;
-    audioElement.load();
+    if (audioElement) {
+        audioElement.src = AUDIO_BASE_PATH + mp3FileName;
+        audioElement.load();
+    }
 
     // Prepare events
     currentTrackEvents = trackData.triggers.events.map((e, index) => ({
@@ -158,13 +163,17 @@ function handleTrackChange() {
     
     if (tendencyBadge) tendencyBadge.textContent = tendencyText;
     
-    // Auto-update slider values
+    // Auto-update slider values (with null safety checks)
     if (intervalSlider) {
         intervalSlider.value = autoInterval;
+    }
+    if (intervalVal) {
         intervalVal.textContent = autoInterval + "ms";
     }
     if (thresholdSlider) {
         thresholdSlider.value = autoThreshold;
+    }
+    if (thresholdVal) {
         thresholdVal.textContent = autoThreshold.toFixed(2) + "x";
     }
 
@@ -177,11 +186,11 @@ function handleTrackChange() {
     }
 
     // Reset displays
-    currentTimeDisplay.textContent = `0.0s / ${trackData.notes.duration_sec}s`;
-    totalTriggersDisplay.textContent = "0";
-    progressBar.style.width = "0%";
+    if (currentTimeDisplay) currentTimeDisplay.textContent = `0.0s / ${trackData.notes.duration_sec}s`;
+    if (totalTriggersDisplay) totalTriggersDisplay.textContent = "0";
+    if (progressBar) progressBar.style.width = "0%";
     
-    logPanel.innerHTML = "";
+    if (logPanel) logPanel.innerHTML = "";
     logMessage("SYSTEM", `Loaded track: ${mp3FileName}`);
     logMessage("SYSTEM", `Duration: ${trackData.notes.duration_sec}s, Total Events: ${currentTrackEvents.length}`);
 
@@ -189,7 +198,8 @@ function handleTrackChange() {
 }
 
 function updateNextTriggerDisplay() {
-    if (!audioElement.duration) {
+    if (!nextTriggerDisplay) return;
+    if (!audioElement || !audioElement.duration) {
         nextTriggerDisplay.textContent = "--";
         return;
     }
@@ -209,21 +219,24 @@ function updateNextTriggerDisplay() {
 }
 
 // Play/Pause control
-playButton.addEventListener("click", () => {
-    if (!audioElement.src) {
-        alert("Please select a track first!");
-        return;
-    }
+if (playButton) {
+    playButton.addEventListener("click", () => {
+        if (!audioElement || !audioElement.src) {
+            alert("Please select a track first!");
+            return;
+        }
 
-    if (isPlaying) {
-        pauseSequence();
-    } else {
-        playSequence();
-    }
-});
+        if (isPlaying) {
+            pauseSequence();
+        } else {
+            playSequence();
+        }
+    });
+}
 
 function initAudioContext() {
     if (audioCtx) return;
+    if (!audioElement) return;
     
     try {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -244,6 +257,8 @@ function initAudioContext() {
 }
 
 function playSequence() {
+    if (!audioElement) return;
+    
     // Initialize Web Audio Context on user interaction
     initAudioContext();
     if (audioCtx && audioCtx.state === "suspended") {
@@ -252,9 +267,11 @@ function playSequence() {
 
     audioElement.play().then(() => {
         isPlaying = true;
-        playButton.textContent = "Pause Sequence";
-        playButton.style.background = "linear-gradient(135deg, #ff3366 0%, #ff0055 100%)";
-        playButton.style.boxShadow = "0 4px 15px rgba(255, 0, 85, 0.3)";
+        if (playButton) {
+            playButton.textContent = "Pause Sequence";
+            playButton.style.background = "linear-gradient(135deg, #ff3366 0%, #ff0055 100%)";
+            playButton.style.boxShadow = "0 4px 15px rgba(255, 0, 85, 0.3)";
+        }
         logMessage("CONTROL", "Sequence started");
         
         // Start precision loop
@@ -266,29 +283,38 @@ function playSequence() {
 }
 
 function pauseSequence() {
-    audioElement.pause();
+    if (audioElement) audioElement.pause();
     isPlaying = false;
-    playButton.textContent = "Play Sequence";
-    playButton.style.background = "linear-gradient(135deg, #0088ff 0%, #00bfff 100%)";
-    playButton.style.boxShadow = "0 4px 15px rgba(0, 191, 255, 0.3)";
+    if (playButton) {
+        playButton.textContent = "Play Sequence";
+        playButton.style.background = "linear-gradient(135deg, #0088ff 0%, #00bfff 100%)";
+        playButton.style.boxShadow = "0 4px 15px rgba(0, 191, 255, 0.3)";
+    }
     logMessage("CONTROL", "Sequence paused");
 }
 
 function stopSequence() {
-    audioElement.pause();
-    audioElement.currentTime = 0;
+    if (audioElement) {
+        audioElement.pause();
+        audioElement.currentTime = 0;
+    }
     isPlaying = false;
-    playButton.textContent = "Play Sequence";
-    playButton.style.background = "linear-gradient(135deg, #0088ff 0%, #00bfff 100%)";
-    playButton.style.boxShadow = "0 4px 15px rgba(0, 191, 255, 0.3)";
+    if (playButton) {
+        playButton.textContent = "Play Sequence";
+        playButton.style.background = "linear-gradient(135deg, #0088ff 0%, #00bfff 100%)";
+        playButton.style.boxShadow = "0 4px 15px rgba(0, 191, 255, 0.3)";
+    }
     
     // Clear screens
     for (let i = 1; i <= 3; i++) {
         const video = document.getElementById(`video-${i}`);
-        video.pause();
-        video.src = "";
-        video.classList.remove("playing");
-        document.getElementById(`wrapper-${i}`).classList.remove("active");
+        if (video) {
+            video.pause();
+            video.src = "";
+            video.classList.remove("playing");
+        }
+        const wrapper = document.getElementById(`wrapper-${i}`);
+        if (wrapper) wrapper.classList.remove("active");
     }
 }
 
@@ -349,8 +375,8 @@ function detectRealtimePeak(currentTime) {
 
     const rmsMean = rmsHistory.reduce((a, b) => a + b, 0) / rmsHistory.length;
     
-    const thresholdMultiplier = parseFloat(thresholdSlider.value);
-    const minIntervalMs = parseFloat(intervalSlider.value);
+    const thresholdMultiplier = thresholdSlider ? parseFloat(thresholdSlider.value) : 1.35;
+    const minIntervalMs = intervalSlider ? parseFloat(intervalSlider.value) : 250;
     
     const isPeak = rms > rmsMean * thresholdMultiplier && rms > 0.005;
     const timeSinceLastTrigger = (currentTime - lastTriggerTimeRealtime) * 1000.0;
@@ -394,14 +420,15 @@ function detectRealtimePeak(currentTime) {
 // Main high-precision animation loop
 function updateLoop() {
     if (!isPlaying) return;
+    if (!audioElement) return;
 
     const currentTime = audioElement.currentTime;
     const duration = audioElement.duration || 0;
 
     // Update progress bar & time display
-    currentTimeDisplay.textContent = `${currentTime.toFixed(1)}s / ${duration.toFixed(1)}s`;
+    if (currentTimeDisplay) currentTimeDisplay.textContent = `${currentTime.toFixed(1)}s / ${duration.toFixed(1)}s`;
     const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
-    progressBar.style.width = `${progressPercent}%`;
+    if (progressBar) progressBar.style.width = `${progressPercent}%`;
 
     // Render visualizer
     drawVisualizer();
@@ -434,7 +461,7 @@ function triggerEvent(event) {
     
     // Increment count
     const triggerCount = triggeredEventIds.size;
-    totalTriggersDisplay.textContent = triggerCount;
+    if (totalTriggersDisplay) totalTriggersDisplay.textContent = triggerCount;
 
     // Log the trigger details
     logMessage(
@@ -456,11 +483,11 @@ function reactScreenWithVideo(screenNum, event) {
     const onoText = document.getElementById(`ono-text-${screenNum}`);
 
     // Highlight screen wrapper
-    wrapper.classList.add("active");
+    if (wrapper) wrapper.classList.add("active");
 
     // Select matching video
     const videoData = selectMatchingVideo(event.type);
-    if (videoData) {
+    if (videoData && video) {
         const videoFileName = videoData[0]; // filename (e.g. "01.mov")
         
         let finalVideoName = videoFileName;
@@ -481,35 +508,38 @@ function reactScreenWithVideo(screenNum, event) {
         video.onended = () => {
             video.classList.remove("playing");
             video.src = "";
-            wrapper.classList.remove("active");
+            if (wrapper) wrapper.classList.remove("active");
         };
     } else {
         // Fallback
         setTimeout(() => {
-            wrapper.classList.remove("active");
+            if (wrapper) wrapper.classList.remove("active");
         }, 2000);
     }
 
-    // Popup Onomatopoeia text
-    onoText.textContent = event.onomatopoeia;
-    onoText.className = "ono-text show"; // reset
-    
-    // Add type class for customized glow color
-    if (event.type === "アタック") {
-        onoText.classList.add("attack");
-    } else if (event.type === "うねり") {
-        onoText.classList.add("swell");
-    } else if (event.type === "刻み") {
-        onoText.classList.add("roll");
-    }
+    if (onoText) {
+        // Popup Onomatopoeia text
+        onoText.textContent = event.onomatopoeia;
+        onoText.className = "ono-text show"; // reset
+        
+        // Add type class for customized glow color
+        if (event.type === "アタック") {
+            onoText.classList.add("attack");
+        } else if (event.type === "うねり") {
+            onoText.classList.add("swell");
+        } else if (event.type === "刻み") {
+            onoText.classList.add("roll");
+        }
 
-    // Clear popup after timeout
-    if (video.timeoutId) {
-        clearTimeout(video.timeoutId);
+        // Clear popup after timeout
+        if (video && video.timeoutId) {
+            clearTimeout(video.timeoutId);
+        }
+        const targetVideo = video || {};
+        targetVideo.timeoutId = setTimeout(() => {
+            onoText.classList.remove("show");
+        }, 1800);
     }
-    video.timeoutId = setTimeout(() => {
-        onoText.classList.remove("show");
-    }, 1800);
 }
 
 // Search video based on trigger type
@@ -551,12 +581,12 @@ function selectMatchingVideo(type) {
 // Add parameters slider bindings
 if (thresholdSlider) {
     thresholdSlider.addEventListener("input", () => {
-        thresholdVal.textContent = parseFloat(thresholdSlider.value).toFixed(2) + "x";
+        if (thresholdVal) thresholdVal.textContent = parseFloat(thresholdSlider.value).toFixed(2) + "x";
     });
 }
 if (intervalSlider) {
     intervalSlider.addEventListener("input", () => {
-        intervalVal.textContent = intervalSlider.value + "ms";
+        if (intervalVal) intervalVal.textContent = intervalSlider.value + "ms";
     });
 }
 if (modeSelect) {

@@ -1,6 +1,16 @@
 // [ファイル名, 秒数, 姿勢, 方向, Weight, Time, Space, Hardness]
 const IDX = { FNAME: 0, DUR: 1, POS: 2, DIR: 3, WEIGHT: 4, TIME: 5, SPACE: 6, HARD: 7 };
 
+// 8つの基本エフォート動作（Basic Effort Actions: BEAs）ラベル取得関数
+function getBEALabel(v) {
+    const W = v[IDX.WEIGHT] > 5 ? 1 : 0;
+    const T = v[IDX.TIME] > 5 ? 1 : 0;
+    const S = v[IDX.SPACE] > 5 ? 1 : 0;
+    const index = (W << 2) | (T << 1) | S;
+    const labels = ["Float", "Glide", "Flick", "Dab", "Wring", "Press", "Slash", "Punch"];
+    return labels[index];
+}
+
 // フィボナッチ（休符・1秒〜21秒）
 const FIBONACCI = [1, 2, 3, 5, 8, 13, 21];
 
@@ -140,6 +150,35 @@ function selectIntelligentVideoForCycle(playerIndex, currentCycleSelections, cho
         // このサイクル内での解決が不可能なため、新規のペア動画の投入を防ぐ (ベース重みを 0 に)
         if (playerIndex === 2 && !pendingPairPartner && pairMap[fname]) {
             baseWeight = 0.0;
+        }
+
+        // ラバン・エフォート遷移ルール（Sarah Fdili Alaouiの研究に基づくBEAs遷移設計）
+        if (prev && baseWeight > 0.0) {
+            const W1 = prev[IDX.WEIGHT] > 5 ? 1 : 0;
+            const T1 = prev[IDX.TIME] > 5 ? 1 : 0;
+            const S1 = prev[IDX.SPACE] > 5 ? 1 : 0;
+            const W2 = v[IDX.WEIGHT] > 5 ? 1 : 0;
+            const T2 = v[IDX.TIME] > 5 ? 1 : 0;
+            const S2 = v[IDX.SPACE] > 5 ? 1 : 0;
+            const dist = Math.abs(W1 - W2) + Math.abs(T1 - T2) + Math.abs(S1 - S2);
+
+            // cycleCount の偶数/奇数に応じて流動的（Smooth Flow）と対比的（Contrast）な遷移を切り替える
+            const isEvenCycle = (cycleCount % 2 === 0);
+            if (isEvenCycle) {
+                // 偶数サイクル: 滑らかな遷移を優先（1要素のみ変化）
+                if (dist === 1) {
+                    baseWeight *= 2.0; 
+                } else if (dist === 3) {
+                    baseWeight *= 0.2; // 劇的な変化を抑える
+                }
+            } else {
+                // 奇数サイクル: 対比的・劇的な変化を優先（2〜3要素変化）
+                if (dist === 3 || dist === 2) {
+                    baseWeight *= 2.0; 
+                } else if (dist === 0) {
+                    baseWeight *= 0.2; // 変化なしを抑える
+                }
+            }
         }
         
         return {
@@ -302,8 +341,10 @@ async function runGlobalSequence() {
 
     while (true) {
         cycleCount++;
-        console.log(`\n--- [Cycle ${cycleCount}] ---`);
+        const flowMode = (cycleCount % 2 === 0) ? 'Smooth Flow (Fluid)' : 'Contrast Transition (Dynamic)';
+        console.log(`\n--- [Cycle ${cycleCount}] (Mode: ${flowMode}) ---`);
         
+        let oldSelections = [...previousSelections];
         let currentCycleSelections = [null, null, null, null];
         let chosenFileNames = new Set();
         
@@ -340,7 +381,23 @@ async function runGlobalSequence() {
             const fibIndex = Math.min(weightScore, FIBONACCI.length - 1);
             const pauseDelays = FIBONACCI[fibIndex];
 
-            console.log(`[Screen ${i+1}] Chosen: ${fileName} | Weight=${weightScore} -> Wait: ${pauseDelays}s`);
+            // ラバン遷移ログの生成
+            const prevVideo = oldSelections[i];
+            const beaLabel = getBEALabel(videoData);
+            let transitionInfo = `[${beaLabel}]`;
+            if (prevVideo) {
+                const prevLabel = getBEALabel(prevVideo);
+                const W1 = prevVideo[IDX.WEIGHT] > 5 ? 1 : 0;
+                const T1 = prevVideo[IDX.TIME] > 5 ? 1 : 0;
+                const S1 = prevVideo[IDX.SPACE] > 5 ? 1 : 0;
+                const W2 = videoData[IDX.WEIGHT] > 5 ? 1 : 0;
+                const T2 = videoData[IDX.TIME] > 5 ? 1 : 0;
+                const S2 = videoData[IDX.SPACE] > 5 ? 1 : 0;
+                const dist = Math.abs(W1 - W2) + Math.abs(T1 - T2) + Math.abs(S1 - S2);
+                transitionInfo = `${prevLabel} -> ${beaLabel} (Dist: ${dist})`;
+            }
+
+            console.log(`[Screen ${i+1}] Chosen: ${fileName} | LMA: ${transitionInfo} | Weight=${weightScore} -> Wait: ${pauseDelays}s`);
             syncTasks.push(players[i].playSequence(fileName, pauseDelays));
         }
 

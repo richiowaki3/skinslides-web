@@ -7,6 +7,20 @@ let triggeredEventIds = new Set();
 let isPlaying = false;
 let screenIndex = 0; // Screen rotation index
 
+// Initialize VideoPlayer instances
+const players = [
+    new VideoPlayer("video-1"),
+    new VideoPlayer("video-2"),
+    new VideoPlayer("video-3")
+];
+
+// 4レベルの動画分類プール
+let videoPools = { 1: [], 2: [], 3: [], 4: [] };
+
+// 振付遷移状態
+let currentScreen = 1;
+let flowDirection = 1; // 1: L2R, -1: R2L
+
 const audioElement = document.getElementById("audio-element");
 const playButton = document.getElementById("play-btn");
 const trackSelect = document.getElementById("track-select");
@@ -43,6 +57,9 @@ async function loadMetadata() {
         const resVideos = await fetch("logic_weights.json");
         videoMetadataPool = await resVideos.json();
         console.log(`[demo] Loaded ${videoMetadataPool.length} videos metadata.`);
+
+        // 動画の4レベル分類
+        classifyVideos();
 
         // Load audios metadata
         const resAudios = await fetch("Audio%20analysis%20data/sound_metadata.json");
@@ -308,16 +325,11 @@ function stopSequence() {
     }
     
     // Clear screens
-    for (let i = 1; i <= 3; i++) {
-        const video = document.getElementById(`video-${i}`);
-        if (video) {
-            video.pause();
-            video.src = "";
-            video.classList.remove("playing");
-        }
-        const wrapper = document.getElementById(`wrapper-${i}`);
+    players.forEach((player, idx) => {
+        player.stop();
+        const wrapper = document.getElementById(`wrapper-${idx + 1}`);
         if (wrapper) wrapper.classList.remove("active");
-    }
+    });
 }
 
 // Render Spectral Monitor Canvas
@@ -457,6 +469,118 @@ function updateLoop() {
     requestAnimationFrame(updateLoop);
 }
 
+// 動画をActivityスコアに基づいて4レベルに分類する
+function classifyVideos() {
+    videoPools = { 1: [], 2: [], 3: [], 4: [] };
+    const IDX_WEIGHT = 4;
+    const IDX_TIME = 5;
+    const IDX_HARDNESS = 7;
+    
+    videoMetadataPool.forEach(v => {
+        const weight = v[IDX_WEIGHT] || 0;
+        const time = v[IDX_TIME] || 0;
+        const hardness = v[IDX_HARDNESS] || 0;
+        const activity = (weight + time + hardness) / 3;
+        v.activity = activity;
+        
+        if (activity < 1.0) {
+            videoPools[1].push(v);
+        } else if (activity < 2.5) {
+            videoPools[2].push(v);
+        } else if (activity < 4.0) {
+            videoPools[3].push(v);
+        } else {
+            videoPools[4].push(v);
+        }
+    });
+    console.log(`[demo] Classified videos: L1=${videoPools[1].length}, L2=${videoPools[2].length}, L3=${videoPools[3].length}, L4=${videoPools[4].length}`);
+}
+
+// 指定したレベルの動画プールからランダムに動画を選択する
+function selectVideoByLevel(level, excludeSet = new Set()) {
+    const pool = videoPools[level];
+    if (!pool || pool.length === 0) {
+        console.warn(`[demo] Pool for level ${level} is empty. Falling back to full videoMetadataPool.`);
+        return videoMetadataPool[Math.floor(Math.random() * videoMetadataPool.length)];
+    }
+    
+    let filtered = pool.filter(v => !excludeSet.has(v[0]));
+    if (filtered.length === 0) {
+        filtered = pool;
+    }
+    
+    return filtered[Math.floor(Math.random() * filtered.length)];
+}
+
+// フィボナッチ数列に基づくフェード時間計算
+function getFibonacciFadeTime(weight) {
+    const fibs = [1, 1, 2, 3, 5, 8, 13];
+    let idx = Math.min(Math.max(0, weight - 2), fibs.length - 1);
+    if (weight <= 2) idx = 0;
+    return fibs[idx];
+}
+
+// トリガーされる画面を決定する（境界判定と方向転換）
+function getScreensToPlay(numScreens) {
+    if (numScreens === 3) {
+        return [1, 2, 3];
+    }
+    
+    let selected = [];
+    let tempScreen = currentScreen;
+    let tempDir = flowDirection;
+    
+    for (let i = 0; i < numScreens; i++) {
+        let attempts = 0;
+        let found = false;
+        while (attempts < 6) {
+            let nextScreen = tempScreen + tempDir;
+            if (nextScreen > 3) {
+                tempDir = -1;
+                nextScreen = 2; // 反転して2に戻る
+            } else if (nextScreen < 1) {
+                tempDir = 1;
+                nextScreen = 2; // 反転して2に戻る
+            }
+            
+            // 同一トリガー内での重複とロック状態を避ける
+            if (!selected.includes(nextScreen) && !players[nextScreen - 1].isLocked) {
+                tempScreen = nextScreen;
+                selected.push(tempScreen);
+                found = true;
+                break;
+            } else {
+                tempScreen = nextScreen;
+                attempts++;
+            }
+        }
+        if (!found) {
+            // ロックされていない他の画面を探す
+            for (let s = 1; s <= 3; s++) {
+                if (!selected.includes(s) && !players[s - 1].isLocked) {
+                    selected.push(s);
+                    tempScreen = s;
+                    break;
+                }
+            }
+            // それでも足りない場合はロック無視で空いている画面を追加
+            if (selected.length <= i) {
+                for (let s = 1; s <= 3; s++) {
+                    if (!selected.includes(s)) {
+                        selected.push(s);
+                        tempScreen = s;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    
+    currentScreen = tempScreen;
+    flowDirection = tempDir;
+    return selected;
+}
+
 // Handle trigger event
 function triggerEvent(event) {
     triggeredEventIds.add(event.id);
@@ -471,64 +595,113 @@ function triggerEvent(event) {
         `${event.onomatopoeia} (Time: ${event.time_sec.toFixed(1)}s, Str: ${event.strength.toFixed(2)})`
     );
 
-    // Determine how many screens to trigger based on strength and type
+    // Determine the audio level
+    let audioLevel = 1;
+    if (event.strength >= 0.75 || event.type === "アタック") {
+        audioLevel = 4;
+    } else if (event.strength >= 0.5) {
+        audioLevel = 3;
+    } else if (event.strength >= 0.25) {
+        audioLevel = 2;
+    } else {
+        audioLevel = 1;
+    }
+
+    // Determine how many screens to trigger based on audio level
     let numScreens = 1;
-    if (event.type === "アタック" || event.strength >= 0.75) {
-        numScreens = 3; // Climax / Attack -> all 3 screens
-    } else if (event.type === "刻み" || event.strength >= 0.45) {
-        numScreens = 2; // Continuous / Mid-level roll -> 2 screens
+    if (audioLevel === 4) {
+        numScreens = 3;
+    } else if (audioLevel === 3) {
+        numScreens = 2;
     }
 
     let chosenInTrigger = new Set();
 
-    // Trigger screens in rotation
-    for (let k = 0; k < numScreens; k++) {
-        const activeScreenNum = ((screenIndex + k) % 3) + 1;
+    // 振付ステートマシンに基づいて対象画面を取得して順次再生
+    const screensToPlay = getScreensToPlay(numScreens);
+    screensToPlay.forEach(activeScreenNum => {
         reactScreenWithVideo(activeScreenNum, event, chosenInTrigger);
-    }
-    screenIndex = (screenIndex + numScreens) % 3;
+    });
 }
 
 // Video reaction and onomatopoeia popup logic
 function reactScreenWithVideo(screenNum, event, chosenInTrigger = new Set()) {
     const wrapper = document.getElementById(`wrapper-${screenNum}`);
-    const video = document.getElementById(`video-${screenNum}`);
     const onoText = document.getElementById(`ono-text-${screenNum}`);
+    const player = players[screenNum - 1];
+    if (!player) return;
+    
+    const video = player.mediaEl;
+    if (!video) return;
 
     // Highlight screen wrapper
     if (wrapper) wrapper.classList.add("active");
 
-    // Select matching video
-    const videoData = selectMatchingVideo(event.type, chosenInTrigger);
-    if (videoData && video) {
-        const videoFileName = videoData[0]; // filename (e.g. "01.mov")
-        chosenInTrigger.add(videoFileName);
-        
-        let finalVideoName = videoFileName;
-        const match = videoFileName.match(/(\d+)\.(mov|mp4)/i);
-        if (match) {
-            finalVideoName = `${match[1]}-Sss720p.mp4`;
-        }
-        
-        // Load and play video
-        video.src = VIDEO_BASE_PATH + finalVideoName;
-        video.play().then(() => {
-            video.classList.add("playing");
-        }).catch(err => {
-            console.warn(`[demo] Video file not found: ${finalVideoName}. Visualizing triggers only.`);
-        });
-
-        // Setup end handler
-        video.onended = () => {
-            video.classList.remove("playing");
-            video.src = "";
-            if (wrapper) wrapper.classList.remove("active");
-        };
+    // Determine the audio level
+    let audioLevel = 1;
+    if (event.strength >= 0.75 || event.type === "アタック") {
+        audioLevel = 4;
+    } else if (event.strength >= 0.5) {
+        audioLevel = 3;
+    } else if (event.strength >= 0.25) {
+        audioLevel = 2;
     } else {
-        // Fallback
-        setTimeout(() => {
-            if (wrapper) wrapper.classList.remove("active");
-        }, 2000);
+        audioLevel = 1;
+    }
+
+    // Check if player is locked
+    if (player.isLocked) {
+        console.log(`[demo] Screen ${screenNum} is locked. Skipping trigger.`);
+        return;
+    }
+
+    // Select video from the corresponding pool
+    const videoData = selectVideoByLevel(audioLevel, chosenInTrigger);
+    if (!videoData) return;
+
+    const videoFileName = videoData[0];
+    chosenInTrigger.add(videoFileName);
+
+    // Apply rotation based on transition and video's original direction
+    const originalDir = videoData[3] || "S";
+    let rotationAngle = 90;
+    
+    if (flowDirection === 1) {
+        if (originalDir === "L2R") {
+            rotationAngle = 90;
+        } else if (originalDir === "R2L") {
+            rotationAngle = 270;
+        } else {
+            rotationAngle = 90;
+        }
+    } else {
+        if (originalDir === "L2R") {
+            rotationAngle = 270;
+        } else if (originalDir === "R2L") {
+            rotationAngle = 90;
+        } else {
+            rotationAngle = 90;
+        }
+    }
+    
+    video.style.transform = `translate(-50%, -50%) rotate(${rotationAngle}deg)`;
+    console.log(`[demo] React Screen ${screenNum} with ${videoFileName} (Level ${audioLevel}, Rotate ${rotationAngle}deg, FlowDir ${flowDirection})`);
+
+    const onPlaybackDone = () => {
+        if (wrapper) wrapper.classList.remove("active");
+    };
+
+    // Play according to audioLevel
+    if (audioLevel === 1) {
+        player.playLevel1(videoFileName).then(onPlaybackDone);
+    } else if (audioLevel === 2) {
+        const weight = videoData[4] || 0;
+        const fadeTime = getFibonacciFadeTime(weight);
+        player.playLevel2(videoFileName, fadeTime).then(onPlaybackDone);
+    } else if (audioLevel === 3) {
+        player.playLevel3(videoFileName).then(onPlaybackDone);
+    } else if (audioLevel === 4) {
+        player.playLevel4(videoFileName).then(onPlaybackDone);
     }
 
     if (onoText) {
@@ -546,56 +719,13 @@ function reactScreenWithVideo(screenNum, event, chosenInTrigger = new Set()) {
         }
 
         // Clear popup after timeout
-        if (video && video.timeoutId) {
+        if (video.timeoutId) {
             clearTimeout(video.timeoutId);
         }
-        const targetVideo = video || {};
-        targetVideo.timeoutId = setTimeout(() => {
+        video.timeoutId = setTimeout(() => {
             onoText.classList.remove("show");
         }, 1800);
     }
-}
-
-// Search video based on trigger type
-function selectMatchingVideo(type, excludeSet = new Set()) {
-    if (!videoMetadataPool || videoMetadataPool.length === 0) return null;
-
-    let candidates = [];
-    const IDX_WEIGHT = 4;
-    const IDX_TIME = 5;
-    const IDX_SPACE = 6;
-    const IDX_HARDNESS = 7;
-
-    // Filter or Sort based on trigger category
-    if (type === "アタック") {
-        candidates = videoMetadataPool.filter(v => v[IDX_WEIGHT] >= 6 && v[IDX_TIME] >= 6);
-        if (candidates.length === 0) {
-            candidates = [...videoMetadataPool].sort((a, b) => (b[IDX_WEIGHT] + b[IDX_TIME]) - (a[IDX_WEIGHT] + a[IDX_TIME]));
-        }
-    } 
-    else if (type === "うねり") {
-        candidates = videoMetadataPool.filter(v => v[IDX_SPACE] >= 6 && v[IDX_TIME] <= 4);
-        if (candidates.length === 0) {
-            candidates = [...videoMetadataPool].sort((a, b) => (b[IDX_SPACE] - b[IDX_TIME]) - (a[IDX_SPACE] - a[IDX_TIME]));
-        }
-    } 
-    else {
-        // 刻み (Roll)
-        candidates = videoMetadataPool.filter(v => v[IDX_HARDNESS] >= 6);
-        if (candidates.length === 0) {
-            candidates = [...videoMetadataPool].sort((a, b) => b[IDX_HARDNESS] - a[IDX_HARDNESS]);
-        }
-    }
-
-    // Filter out excluded ones
-    let filtered = candidates.filter(v => !excludeSet.has(v[0]));
-    if (filtered.length === 0) {
-        filtered = candidates;
-    }
-
-    // Pick a random matching candidate
-    const index = Math.floor(Math.random() * Math.min(filtered.length, 5));
-    return filtered[index];
 }
 
 // Add parameters slider bindings

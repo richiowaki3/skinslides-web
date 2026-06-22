@@ -233,14 +233,14 @@
             border-radius: 12px;
             overflow: hidden;
             background-color: #000;
-            border: 1px solid var(--border-color);
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            border: none;
+            box-shadow: none;
             transition: all 0.3s ease;
         }
 
         .screen-wrapper.active {
-            border-color: var(--accent-green);
-            box-shadow: 0 0 20px rgba(0, 255, 170, 0.25);
+            border: none;
+            box-shadow: none;
         }
 
         .screen {
@@ -485,6 +485,7 @@
         const VIDEO_BASE_PATH = R2_BASE_URL;
         const AUDIO_BASE_PATH = isLocal ? "audios/" : R2_BASE_URL;
     </script>
+    <script src="player.js"></script>
     <script src="audio_trigger_logic.js"></script>
 </body>
 </html>

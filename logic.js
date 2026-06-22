@@ -7,6 +7,13 @@ let audioMetadataPool = [];
 let players = [];
 let cycleCount = 0;
 
+// 4レベルの動画分類プール
+let videoPools = { 1: [], 2: [], 3: [], 4: [] };
+
+// 振付遷移状態
+let currentScreen = 1;
+let flowDirection = 1; // 1: 左から右（Screen 1 -> 2 -> 3）, -1: 右から左（Screen 3 -> 2 -> 1）
+
 // アプリの初期化とデータロード
 async function initSkinslides() {
     document.getElementById('start-overlay').style.display = 'none';
@@ -24,52 +31,127 @@ async function initSkinslides() {
         metadataPool = await resWeights.json();
         console.log(`[logic] Loaded ${metadataPool.length} video metadata records.`);
 
-        // 2. 音響メタデータ (sound_metadata.json) のロード
+        // 2. 動画の4レベル分類
+        classifyVideos();
+
+        // 3. 音響メタデータ (sound_metadata.json) のロード
         const resAudio = await fetch('Audio%20analysis%20data/sound_metadata.json');
         audioMetadataPool = await resAudio.json();
         console.log(`[logic] Loaded ${audioMetadataPool.length} audio metadata records.`);
 
-        // 3. グローバルシーケンスの開始
+        // 4. グローバルシーケンスの開始
         runGlobalSequence();
     } catch (e) {
         console.error("JSONの読み込みまたは初期化に失敗しました:", e);
     }
 }
 
-// 映像特徴からトリガータイプに応じた動画を抽出する
-function selectMatchingVideo(type, excludeSet = new Set()) {
-    if (!metadataPool || metadataPool.length === 0) return null;
+// 動画をActivityスコアに基づいて4レベルに分類する
+function classifyVideos() {
+    videoPools = { 1: [], 2: [], 3: [], 4: [] };
+    metadataPool.forEach(v => {
+        const weight = v[IDX.WEIGHT] || 0;
+        const time = v[IDX.TIME] || 0;
+        const hardness = v[IDX.HARD] || v[IDX.HARDNESS] || 0;
+        const activity = (weight + time + hardness) / 3;
+        v.activity = activity;
+        
+        if (activity < 1.0) {
+            videoPools[1].push(v);
+        } else if (activity < 2.5) {
+            videoPools[2].push(v);
+        } else if (activity < 4.0) {
+            videoPools[3].push(v);
+        } else {
+            videoPools[4].push(v);
+        }
+    });
+    console.log(`[logic] Classified videos: L1=${videoPools[1].length}, L2=${videoPools[2].length}, L3=${videoPools[3].length}, L4=${videoPools[4].length}`);
+}
 
-    let candidates = [];
-    if (type === "アタック") {
-        candidates = metadataPool.filter(v => v[IDX.WEIGHT] >= 6 && v[IDX.TIME] >= 6);
-        if (candidates.length === 0) {
-            candidates = [...metadataPool].sort((a, b) => (b[IDX.WEIGHT] + b[IDX.TIME]) - (a[IDX.WEIGHT] + a[IDX.TIME]));
-        }
-    } 
-    else if (type === "うねり") {
-        candidates = metadataPool.filter(v => v[IDX.SPACE] >= 6 && v[IDX.TIME] <= 4);
-        if (candidates.length === 0) {
-            candidates = [...metadataPool].sort((a, b) => (b[IDX.SPACE] - b[IDX.TIME]) - (a[IDX.SPACE] - a[IDX.TIME]));
-        }
-    } 
-    else {
-        // 刻み (Roll)
-        candidates = metadataPool.filter(v => v[IDX.HARDNESS] >= 6 || v[IDX.HARD] >= 6);
-        if (candidates.length === 0) {
-            candidates = [...metadataPool].sort((a, b) => b[IDX.HARD] - a[IDX.HARD]);
-        }
+// 指定したレベルの動画プールからランダムに動画を選択する
+function selectVideoByLevel(level, excludeSet = new Set()) {
+    const pool = videoPools[level];
+    if (!pool || pool.length === 0) {
+        console.warn(`[logic] Pool for level ${level} is empty. Falling back to full metadataPool.`);
+        return metadataPool[Math.floor(Math.random() * metadataPool.length)];
     }
-
-    // 重複を避けるため除外リストにない候補をフィルタリング
-    let filtered = candidates.filter(v => !excludeSet.has(v[IDX.FNAME]));
+    
+    let filtered = pool.filter(v => !excludeSet.has(v[IDX.FNAME]));
     if (filtered.length === 0) {
-        filtered = candidates; // すべて除外されている場合はフォールバック
+        filtered = pool; // すべて除外されている場合はプール全体から選択
     }
+    
+    return filtered[Math.floor(Math.random() * filtered.length)];
+}
 
-    // 上位5つの候補からランダムに決定
-    const index = Math.floor(Math.random() * Math.min(filtered.length, 5));
-    return filtered[index];
+// フィボナッチ数列に基づくフェード時間計算
+function getFibonacciFadeTime(weight) {
+    const fibs = [1, 1, 2, 3, 5, 8, 13];
+    let idx = Math.min(Math.max(0, weight - 2), fibs.length - 1);
+    if (weight <= 2) idx = 0;
+    return fibs[idx];
+}
+
+// トリガーされる画面を決定する（境界判定と方向転換）
+function getScreensToPlay(numScreens) {
+    if (numScreens === 3) {
+        return [1, 2, 3];
+    }
+    
+    let selected = [];
+    let tempScreen = currentScreen;
+    let tempDir = flowDirection;
+    
+    for (let i = 0; i < numScreens; i++) {
+        let attempts = 0;
+        let found = false;
+        while (attempts < 6) {
+            let nextScreen = tempScreen + tempDir;
+            if (nextScreen > 3) {
+                tempDir = -1;
+                nextScreen = 2; // 反転して2に戻る
+            } else if (nextScreen < 1) {
+                tempDir = 1;
+                nextScreen = 2; // 反転して2に戻る
+            }
+            
+            // 同一トリガー内での重複とロック状態を避ける
+            if (!selected.includes(nextScreen) && !players[nextScreen - 1].isLocked) {
+                tempScreen = nextScreen;
+                selected.push(tempScreen);
+                found = true;
+                break;
+            } else {
+                tempScreen = nextScreen;
+                attempts++;
+            }
+        }
+        if (!found) {
+            // ロックされていない他の画面を探す
+            for (let s = 1; s <= 3; s++) {
+                if (!selected.includes(s) && !players[s - 1].isLocked) {
+                    selected.push(s);
+                    tempScreen = s;
+                    break;
+                }
+            }
+            // それでも足りない場合はロック無視で空いている画面を追加
+            if (selected.length <= i) {
+                for (let s = 1; s <= 3; s++) {
+                    if (!selected.includes(s)) {
+                        selected.push(s);
+                        tempScreen = s;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    
+    currentScreen = tempScreen;
+    flowDirection = tempDir;
+    return selected;
 }
 
 // 特定の画面に動画を再生させるリアクション処理
@@ -80,31 +162,71 @@ function reactScreenWithVideo(screenNum, event, chosenInTrigger) {
     const videoEl = player.mediaEl;
     if (!videoEl) return;
 
-    // トリガーの種類に合致する動画を選択
-    const videoData = selectMatchingVideo(event.type, chosenInTrigger);
-    if (videoData) {
-        const videoFileName = videoData[IDX.FNAME];
-        chosenInTrigger.add(videoFileName); // このトリガーイベント内で重複を避けるために登録
+    // 音響イベントのレベル分類
+    let audioLevel = 1;
+    if (event.strength >= 0.75 || event.type === "アタック") {
+        audioLevel = 4;
+    } else if (event.strength >= 0.5) {
+        audioLevel = 3;
+    } else if (event.strength >= 0.25) {
+        audioLevel = 2;
+    } else {
+        audioLevel = 1;
+    }
 
-        let finalVideoName = videoFileName;
-        const match = videoFileName.match(/(\d+)\.(mov|mp4)/i);
-        if (match) {
-            finalVideoName = `${match[1]}-Sss720p.mp4`;
+    // 上書きロックチェック
+    if (player.isLocked) {
+        console.log(`[logic] Screen ${screenNum} is locked. Skipping trigger.`);
+        return;
+    }
+
+    // レベルに対応した映像を選択
+    const videoData = selectVideoByLevel(audioLevel, chosenInTrigger);
+    if (!videoData) return;
+
+    const videoFileName = videoData[IDX.FNAME];
+    chosenInTrigger.add(videoFileName);
+
+    // キャラクター遷移に合わせた回転角の計算 (90度 or 270度)
+    // flowDirection === 1 (L2R) の場合は Top-to-Bottom, -1 (R2L) の場合は Bottom-to-Top
+    const originalDir = videoData[IDX.DIR] || "S";
+    let rotationAngle = 90;
+    
+    if (flowDirection === 1) {
+        // 上から下への動きにする
+        if (originalDir === "L2R") {
+            rotationAngle = 90;
+        } else if (originalDir === "R2L") {
+            rotationAngle = 270;
+        } else {
+            rotationAngle = 90;
         }
+    } else {
+        // 下から上への動きにする
+        if (originalDir === "L2R") {
+            rotationAngle = 270;
+        } else if (originalDir === "R2L") {
+            rotationAngle = 90;
+        } else {
+            rotationAngle = 90;
+        }
+    }
 
-        // 動画のパスを設定し、再生してクラスを付与
-        videoEl.src = VIDEO_BASE_PATH + finalVideoName;
-        videoEl.play().then(() => {
-            videoEl.classList.add("playing");
-        }).catch(err => {
-            console.warn(`[logic] Video play failed: ${finalVideoName}`, err);
-        });
+    // CSSの回転プロパティを適用
+    videoEl.style.transform = `translate(-50%, -50%) rotate(${rotationAngle}deg)`;
+    console.log(`[logic] React Screen ${screenNum} with ${videoFileName} (Level ${audioLevel}, Rotate ${rotationAngle}deg, FlowDir ${flowDirection})`);
 
-        // 再生終了時に非表示・リセット
-        videoEl.onended = () => {
-            videoEl.classList.remove("playing");
-            videoEl.src = "";
-        };
+    // レベルに応じた再生ロジックを実行
+    if (audioLevel === 1) {
+        player.playLevel1(videoFileName);
+    } else if (audioLevel === 2) {
+        const weight = videoData[IDX.WEIGHT] || 0;
+        const fadeTime = getFibonacciFadeTime(weight);
+        player.playLevel2(videoFileName, fadeTime);
+    } else if (audioLevel === 3) {
+        player.playLevel3(videoFileName);
+    } else if (audioLevel === 4) {
+        player.playLevel4(videoFileName);
     }
 }
 
@@ -145,7 +267,6 @@ async function runGlobalSequence() {
         }));
 
         let triggeredEventIds = new Set();
-        let screenIndex = 0;
 
         // 音声のロードと再生
         audioEl.src = AUDIO_BASE_PATH + audioFileName;
@@ -175,23 +296,34 @@ async function runGlobalSequence() {
                         
                         console.log(`[Trigger] Type: ${event.type}, Time: ${event.time_sec.toFixed(1)}s, Strength: ${event.strength.toFixed(2)}, Onoma: ${event.onomatopoeia}`);
 
-                        // 音の盛り上がり（Strength）とタイプに応じて表示する画面数（1〜3）を決定
-                        let numScreens = 1;
-                        if (event.type === "アタック" || event.strength >= 0.75) {
-                            numScreens = 3; // 音の盛り上がり（アタック・大音量）で全3画面に絵を映し出す
-                        } else if (event.type === "刻み" || event.strength >= 0.45) {
-                            numScreens = 2; // 動きのある音が連続・中音量時は2画面
+                        // 音響レベルの算出
+                        let audioLevel = 1;
+                        if (event.strength >= 0.75 || event.type === "アタック") {
+                            audioLevel = 4;
+                        } else if (event.strength >= 0.5) {
+                            audioLevel = 3;
+                        } else if (event.strength >= 0.25) {
+                            audioLevel = 2;
+                        } else {
+                            audioLevel = 1;
                         }
 
-                        // 各画面の映像が重ならないように排他制御用のセットを作成
+                        // レベルに応じた画面トリガー数の決定
+                        let numScreens = 1;
+                        if (audioLevel === 4) {
+                            numScreens = 3;
+                        } else if (audioLevel === 3) {
+                            numScreens = 2;
+                        }
+
+                        // 重複除外セット
                         let chosenInTrigger = new Set();
 
-                        // 順次画面を回転させてトリガー
-                        for (let k = 0; k < numScreens; k++) {
-                            const activeScreenNum = ((screenIndex + k) % 3) + 1;
+                        // 振付ステートマシンに基づいて対象画面を取得して順次再生
+                        const screensToPlay = getScreensToPlay(numScreens);
+                        screensToPlay.forEach(activeScreenNum => {
                             reactScreenWithVideo(activeScreenNum, event, chosenInTrigger);
-                        }
-                        screenIndex = (screenIndex + numScreens) % 3;
+                        });
                     }
                 });
 

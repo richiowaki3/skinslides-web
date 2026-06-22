@@ -61,8 +61,10 @@ function populateTrackSelect() {
     if (!trackSelect) return;
     trackSelect.innerHTML = '<option value="" disabled selected>Select an audio track...</option>';
     
-    // Sort audios by dynamism score for convenience
-    const sortedAudios = [...audioMetadataPool].sort((a, b) => b.profile.amount.dynamism_score - a.profile.amount.dynamism_score);
+    // Filter to include only scene2End tracks
+    const sortedAudios = [...audioMetadataPool]
+        .filter(track => track.file_id.includes("scene2End"))
+        .sort((a, b) => b.profile.amount.dynamism_score - a.profile.amount.dynamism_score);
 
     sortedAudios.forEach(track => {
         const option = document.createElement("option");
@@ -469,15 +471,26 @@ function triggerEvent(event) {
         `${event.onomatopoeia} (Time: ${event.time_sec.toFixed(1)}s, Str: ${event.strength.toFixed(2)})`
     );
 
-    // Rotate through screens 1, 2, 3
-    const activeScreenNum = (screenIndex % 3) + 1;
-    screenIndex++;
+    // Determine how many screens to trigger based on strength and type
+    let numScreens = 1;
+    if (event.type === "アタック" || event.strength >= 0.75) {
+        numScreens = 3; // Climax / Attack -> all 3 screens
+    } else if (event.type === "刻み" || event.strength >= 0.45) {
+        numScreens = 2; // Continuous / Mid-level roll -> 2 screens
+    }
 
-    reactScreenWithVideo(activeScreenNum, event);
+    let chosenInTrigger = new Set();
+
+    // Trigger screens in rotation
+    for (let k = 0; k < numScreens; k++) {
+        const activeScreenNum = ((screenIndex + k) % 3) + 1;
+        reactScreenWithVideo(activeScreenNum, event, chosenInTrigger);
+    }
+    screenIndex = (screenIndex + numScreens) % 3;
 }
 
 // Video reaction and onomatopoeia popup logic
-function reactScreenWithVideo(screenNum, event) {
+function reactScreenWithVideo(screenNum, event, chosenInTrigger = new Set()) {
     const wrapper = document.getElementById(`wrapper-${screenNum}`);
     const video = document.getElementById(`video-${screenNum}`);
     const onoText = document.getElementById(`ono-text-${screenNum}`);
@@ -486,9 +499,10 @@ function reactScreenWithVideo(screenNum, event) {
     if (wrapper) wrapper.classList.add("active");
 
     // Select matching video
-    const videoData = selectMatchingVideo(event.type);
+    const videoData = selectMatchingVideo(event.type, chosenInTrigger);
     if (videoData && video) {
         const videoFileName = videoData[0]; // filename (e.g. "01.mov")
+        chosenInTrigger.add(videoFileName);
         
         let finalVideoName = videoFileName;
         const match = videoFileName.match(/(\d+)\.(mov|mp4)/i);
@@ -543,7 +557,7 @@ function reactScreenWithVideo(screenNum, event) {
 }
 
 // Search video based on trigger type
-function selectMatchingVideo(type) {
+function selectMatchingVideo(type, excludeSet = new Set()) {
     if (!videoMetadataPool || videoMetadataPool.length === 0) return null;
 
     let candidates = [];
@@ -573,9 +587,15 @@ function selectMatchingVideo(type) {
         }
     }
 
+    // Filter out excluded ones
+    let filtered = candidates.filter(v => !excludeSet.has(v[0]));
+    if (filtered.length === 0) {
+        filtered = candidates;
+    }
+
     // Pick a random matching candidate
-    const index = Math.floor(Math.random() * Math.min(candidates.length, 5));
-    return candidates[index];
+    const index = Math.floor(Math.random() * Math.min(filtered.length, 5));
+    return filtered[index];
 }
 
 // Add parameters slider bindings

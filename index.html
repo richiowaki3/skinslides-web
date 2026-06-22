@@ -19,12 +19,27 @@
             display: flex;
             gap: 20px;
         }
-        .screen {
+        .screen-wrapper {
+            position: relative;
             width: 320px;
-            height: 568px;
+            height: 568px; 
             background-color: #000;
-            object-fit: contain;
+            overflow: hidden;
             border: 1px solid #222; /* 確認用の薄い枠線 */
+        }
+        .screen {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 568px; /* ラップ枠の高さに合わせる */
+            height: 320px; /* ラップ枠の幅に合わせる */
+            transform: translate(-50%, -50%) rotate(90deg);
+            object-fit: cover;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+        .screen.playing {
+            opacity: 1;
         }
         #player-4 {
             display: none;
@@ -65,11 +80,17 @@
         <div class="start-btn">Click to Start Sequence</div>
     </div>
 
-    <!-- 可視3画面 -->
+    <!-- 可視3画面 (鬣フレーム・90度回転) -->
     <div class="screen-container">
-        <video id="player-1" class="screen" muted playsinline></video>
-        <video id="player-2" class="screen" muted playsinline></video>
-        <video id="player-3" class="screen" muted playsinline></video>
+        <div class="screen-wrapper">
+            <video id="player-1" class="screen" muted playsinline></video>
+        </div>
+        <div class="screen-wrapper">
+            <video id="player-2" class="screen" muted playsinline></video>
+        </div>
+        <div class="screen-wrapper">
+            <video id="player-3" class="screen" muted playsinline></video>
+        </div>
     </div>
     
     <!-- 音声用/不可視第4プレイヤー（HTML5 Audio） -->

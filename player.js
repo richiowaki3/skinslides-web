@@ -50,11 +50,6 @@ class VideoPlayer {
         this.mediaEl = document.getElementById(elementId);
         this.isHiddenAudioOnly = isHiddenAudioOnly;
         
-        if (!isHiddenAudioOnly) {
-            // Web Audio API でのゲイン増幅（CORS制限対策。VIDEO_CACHE_BUST と併用することでキャッシュ競合を回避）
-            this.mediaEl.crossOrigin = "anonymous";
-        }
-
         // 音声専用プレイヤーは常にミュート解除、動画プレイヤーは window.videosMuted に従う
         this.mediaEl.muted = isHiddenAudioOnly ? false : window.videosMuted; 
         
@@ -78,11 +73,6 @@ class VideoPlayer {
         this.currentVideoData = null;
         this.currentRotationAngle = 90;
         this.currentFlowDir = 1;
-
-        // Web Audio API関連
-        this.audioCtx = null;
-        this.source = null;
-        this.gainNode = null;
     }
 
     // ミュート状態を動的に変更
@@ -92,45 +82,10 @@ class VideoPlayer {
         }
     }
 
-    // ゲインボリュームを動的に変更 (Web Audio API or HTML5 fallback)
+    // ゲインボリュームを動的に変更 (HTML5標準ボリュームは最大1.0のため、最大1.0でクリップ)
     setGain(value) {
         if (this.isHiddenAudioOnly) return;
-        if (this.gainNode) {
-            this.gainNode.gain.setValueAtTime(value, this.audioCtx.currentTime);
-        } else {
-            // HTML5標準ボリュームは最大1.0のためクリップ
-            this.mediaEl.volume = Math.min(1.0, value);
-        }
-    }
-
-    // Web Audio Context の遅延初期化
-    initAudioContext() {
-        if (this.isHiddenAudioOnly) return;
-        if (this.gainNode) {
-            if (this.audioCtx && this.audioCtx.state === 'suspended') {
-                this.audioCtx.resume();
-            }
-            return;
-        }
-
-        try {
-            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-            if (!AudioContextClass) return;
-
-            this.audioCtx = new AudioContextClass();
-            this.source = this.audioCtx.createMediaElementSource(this.mediaEl);
-            this.gainNode = this.audioCtx.createGain();
-
-            this.source.connect(this.gainNode);
-            this.gainNode.connect(this.audioCtx.destination);
-
-            // グローバル音量ゲインを適用
-            const currentGain = window.videoGainVolume !== undefined ? window.videoGainVolume : 1.0;
-            this.gainNode.gain.setValueAtTime(currentGain, this.audioCtx.currentTime);
-            console.log(`[player] Web Audio Gain initialized for ${this.mediaEl.id} with gain ${currentGain}`);
-        } catch (e) {
-            console.warn(`[player] Web Audio Gain init failed for ${this.mediaEl.id}:`, e);
-        }
+        this.mediaEl.volume = Math.min(1.0, value);
     }
 
     // 従来のオーディオ再生用メソッドを維持
@@ -149,8 +104,8 @@ class VideoPlayer {
             }
             
             this.mediaEl.src = basePath + finalFileName + (this.isHiddenAudioOnly ? "" : (window.VIDEO_CACHE_BUST || ""));
+            // 初期音量ゲインを適用
             this.mediaEl.volume = Math.min(1.0, window.videoGainVolume !== undefined ? window.videoGainVolume : 1.0);
-            this.initAudioContext();
             
             this.mediaEl.play().then(() => {
                 if (!this.isHiddenAudioOnly) {
@@ -194,7 +149,6 @@ class VideoPlayer {
             this.mediaEl.volume = Math.min(1.0, window.videoGainVolume !== undefined ? window.videoGainVolume : 1.0);
             this.mediaEl.style.opacity = 1;
             this.mediaEl.classList.add("playing");
-            this.initAudioContext();
             
             this.mediaEl.play().then(() => {
                 this.startFreezeMonitor(fileName);
@@ -253,7 +207,6 @@ class VideoPlayer {
                         this.fadeInterval = null;
                         
                         // フェードイン完了後に再生開始
-                        this.initAudioContext();
                         this.mediaEl.play().then(() => {
                             this.startFreezeMonitor(fileName);
                         }).catch(e => {
@@ -322,7 +275,6 @@ class VideoPlayer {
             this.mediaEl.volume = Math.min(1.0, window.videoGainVolume !== undefined ? window.videoGainVolume : 1.0);
             this.mediaEl.style.opacity = 1;
             this.mediaEl.classList.add("playing");
-            this.initAudioContext();
             
             this.mediaEl.play().then(() => {
                 this.startFreezeMonitor(fileName);
@@ -362,7 +314,6 @@ class VideoPlayer {
             this.mediaEl.volume = Math.min(1.0, window.videoGainVolume !== undefined ? window.videoGainVolume : 1.0);
             this.mediaEl.style.opacity = 1;
             this.mediaEl.classList.add("playing");
-            this.initAudioContext();
             
             this.mediaEl.play().then(() => {
                 this.startFreezeMonitor(fileName);

@@ -53,6 +53,18 @@ let trackDominantMotion = "刻み";
 // Fetch metadata files
 async function loadMetadata() {
     try {
+        // Local videos folder auto-detection
+        try {
+            const testRes = await fetch("videos/05-Sss720p.mp4", { method: 'HEAD' });
+            if (testRes.ok) {
+                console.log("[demo] Local /videos/ folder detected. Using local videos same-origin source.");
+                VIDEO_BASE_PATH = "videos/";
+                addDecisionLog("Local videos folder detected. Using local videos (no CORS restriction, 50x Web Audio boost active).", "success");
+            }
+        } catch (e) {
+            console.log("[demo] Local videos not found. Using Cloudflare R2.");
+        }
+
         // Load videos metadata
         const resVideos = await fetch("logic_weights.json");
         videoMetadataPool = await resVideos.json();

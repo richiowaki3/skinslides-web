@@ -25,6 +25,21 @@ async function initSkinslides() {
         new VideoPlayer("player-4", true) 
     ];
 
+    // 動画音声トグルボタンのイベントリスナー設定
+    const audioToggleBtn = document.getElementById("toggle-video-audio");
+    if (audioToggleBtn) {
+        audioToggleBtn.addEventListener("click", () => {
+            window.videosMuted = !window.videosMuted;
+            players.forEach(p => p.setMute(window.videosMuted));
+            audioToggleBtn.textContent = `Video Audio: ${window.videosMuted ? "OFF" : "ON"}`;
+            audioToggleBtn.style.borderColor = window.videosMuted ? "rgba(255,255,255,0.1)" : "#00ffaa";
+            addDecisionLog(`Video Audio toggled to: ${window.videosMuted ? "OFF (Muted)" : "ON (Unmuted)"}`, "info");
+        });
+        // 初期化状態の適用
+        audioToggleBtn.textContent = `Video Audio: ${window.videosMuted ? "OFF" : "ON"}`;
+        audioToggleBtn.style.borderColor = window.videosMuted ? "rgba(255,255,255,0.1)" : "#00ffaa";
+    }
+
     try {
         // 1. メタデータ (logic_weights.json) のロード
         const resWeights = await fetch('logic_weights.json');
@@ -180,6 +195,7 @@ function reactScreenWithVideo(screenNum, event, chosenInTrigger) {
     // 上書きロックチェック
     if (player.isLocked) {
         console.log(`[logic] Screen ${screenNum} is locked. Skipping trigger.`);
+        addDecisionLog(`Screen ${screenNum}: LOCKED (Skipped)`, "warning");
         return;
     }
 
@@ -191,12 +207,10 @@ function reactScreenWithVideo(screenNum, event, chosenInTrigger) {
     chosenInTrigger.add(videoFileName);
 
     // キャラクター遷移に合わせた回転角の計算 (90度 or 270度)
-    // flowDirection === 1 (L2R) の場合は Top-to-Bottom, -1 (R2L) の場合は Bottom-to-Top
     const originalDir = videoData[IDX.DIR] || "S";
     let rotationAngle = 90;
     
     if (flowDirection === 1) {
-        // 上から下への動きにする
         if (originalDir === "L2R") {
             rotationAngle = 90;
         } else if (originalDir === "R2L") {
@@ -205,7 +219,6 @@ function reactScreenWithVideo(screenNum, event, chosenInTrigger) {
             rotationAngle = 90;
         }
     } else {
-        // 下から上への動きにする
         if (originalDir === "L2R") {
             rotationAngle = 270;
         } else if (originalDir === "R2L") {
@@ -215,21 +228,34 @@ function reactScreenWithVideo(screenNum, event, chosenInTrigger) {
         }
     }
 
+    // モニター用の再生情報をプレイヤーにセット
+    player.currentVideoData = videoData;
+    player.currentRotationAngle = rotationAngle;
+    player.currentFlowDir = flowDirection;
+
     // CSSの回転プロパティを適用
     videoEl.style.transform = `translate(-50%, -50%) rotate(${rotationAngle}deg)`;
     console.log(`[logic] React Screen ${screenNum} with ${videoFileName} (Level ${audioLevel}, Rotate ${rotationAngle}deg, FlowDir ${flowDirection})`);
+    
+    // アクションログを追記
+    const lmaText = `W:${videoData[IDX.WEIGHT]} T:${videoData[IDX.TIME]} S:${videoData[IDX.SPACE]} H:${videoData[IDX.HARD]}`;
+    addDecisionLog(`Screen ${screenNum} Triggered: Play ${videoFileName} (L${audioLevel}, ${rotationAngle}°, LMA: ${lmaText}, Flow:${flowDirection > 0 ? "L→R" : "R→L"})`, "info");
+
+    const onPlaybackDone = () => {
+        player.currentVideoData = null;
+    };
 
     // レベルに応じた再生ロジックを実行
     if (audioLevel === 1) {
-        player.playLevel1(videoFileName);
+        player.playLevel1(videoFileName).then(onPlaybackDone);
     } else if (audioLevel === 2) {
         const weight = videoData[IDX.WEIGHT] || 0;
         const fadeTime = getFibonacciFadeTime(weight);
-        player.playLevel2(videoFileName, fadeTime);
+        player.playLevel2(videoFileName, fadeTime).then(onPlaybackDone);
     } else if (audioLevel === 3) {
-        player.playLevel3(videoFileName);
+        player.playLevel3(videoFileName).then(onPlaybackDone);
     } else if (audioLevel === 4) {
-        player.playLevel4(videoFileName);
+        player.playLevel4(videoFileName).then(onPlaybackDone);
     }
 }
 
@@ -258,6 +284,12 @@ async function runGlobalSequence() {
         const audioFileName = selectedTrack.file_id.replace(/\.(aif|aiff)$/i, '.mp3');
         
         console.log(`\n--- [Cycle ${cycleCount}] Playing: ${audioFileName} ---`);
+        
+        // トラック名表示を更新
+        const trackNameEl = document.getElementById("ana-track-name");
+        if (trackNameEl) trackNameEl.textContent = audioFileName;
+        
+        addDecisionLog(`--- [Cycle ${cycleCount}] Loaded track: ${audioFileName} ---`, "success");
 
         // トリガーイベントの準備
         const currentTrackEvents = selectedTrack.triggers.events.map((e, index) => ({
@@ -292,6 +324,14 @@ async function runGlobalSequence() {
                 }
 
                 const currentTime = audioEl.currentTime;
+                const duration = audioEl.duration || 0;
+
+                // タイムライン描画とモニター表示の更新
+                drawTimeline(currentTime, duration, currentTrackEvents);
+                updateMonitorUI();
+                
+                const timeEl = document.getElementById("ana-time");
+                if (timeEl) timeEl.textContent = `${currentTime.toFixed(1)}s / ${duration.toFixed(1)}s`;
 
                 currentTrackEvents.forEach(event => {
                     if (event.time_sec <= currentTime && !triggeredEventIds.has(event.id)) {
@@ -319,6 +359,9 @@ async function runGlobalSequence() {
                             numScreens = 2;
                         }
 
+                        // 意思決定ログにイベント出力
+                        addDecisionLog(`AUDIO ONSET: ${event.onomatopoeia} (Time: ${event.time_sec.toFixed(1)}s, Level ${audioLevel}, Strength: ${event.strength.toFixed(2)}) -> Triggering ${numScreens} screens`, "warning");
+
                         // 重複除外セット
                         let chosenInTrigger = new Set();
 
@@ -341,9 +384,195 @@ async function runGlobalSequence() {
         });
 
         console.log(`--- [Cycle ${cycleCount}] Track finished ---`);
+        addDecisionLog(`--- Track Finished ---`, "success");
+        
         // サイクル間に短いブレイクを挟む
         await new Promise(resolve => setTimeout(resolve, 2000));
     }
 }
+
+// タイムライン描画 (Canvas)
+function drawTimeline(currentTime, duration, events) {
+    const canvas = document.getElementById("timeline-canvas");
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+    
+    if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+    }
+    
+    ctx.clearRect(0, 0, width, height);
+    
+    // 背景
+    ctx.fillStyle = "rgba(10, 10, 15, 0.4)";
+    ctx.fillRect(0, 0, width, height);
+    
+    // 中央の軸線
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, height / 2);
+    ctx.lineTo(width, height / 2);
+    ctx.stroke();
+    
+    if (duration <= 0) return;
+    
+    // トリガープット
+    events.forEach(e => {
+        const x = (e.time_sec / duration) * width;
+        let color = "#555577";
+        let radius = 3;
+        let lineH = 10;
+        let level = 1;
+        
+        if (e.strength >= 0.75 || e.type === "アタック") {
+            level = 4;
+            color = "#ff7700";
+            radius = 5;
+            lineH = 30;
+        } else if (e.strength >= 0.5) {
+            level = 3;
+            color = "#00bfff";
+            radius = 4.5;
+            lineH = 22;
+        } else if (e.strength >= 0.25) {
+            level = 2;
+            color = "#00ffaa";
+            radius = 4;
+            lineH = 16;
+        }
+        
+        ctx.strokeStyle = color;
+        ctx.lineWidth = level >= 3 ? 2 : 1;
+        ctx.beginPath();
+        ctx.moveTo(x, (height - lineH) / 2);
+        ctx.lineTo(x, (height + lineH) / 2);
+        ctx.stroke();
+        
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(x, height / 2, radius, 0, Math.PI * 2);
+        ctx.fill();
+        
+        if (e.time_sec <= currentTime) {
+            ctx.fillStyle = color + "22";
+            ctx.beginPath();
+            ctx.arc(x, height / 2, radius * 2.5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    });
+    
+    // 現在時間のインジケーター (プレイヘッド)
+    const playheadX = (currentTime / duration) * width;
+    ctx.strokeStyle = "#ff3366";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(playheadX, 0);
+    ctx.lineTo(playheadX, height);
+    ctx.stroke();
+    
+    ctx.fillStyle = "#ff3366";
+    ctx.beginPath();
+    ctx.moveTo(playheadX - 6, 0);
+    ctx.lineTo(playheadX + 6, 0);
+    ctx.lineTo(playheadX, 8);
+    ctx.closePath();
+    ctx.fill();
+}
+
+// スクリーンステータスの更新
+function updateMonitorUI() {
+    players.forEach((player, index) => {
+        const screenNum = index + 1;
+        if (screenNum > 3) return; // 音声プレイヤー除外
+        
+        const stateEl = document.getElementById(`scr${screenNum}-state`);
+        const videoEl = document.getElementById(`scr${screenNum}-video`);
+        const lmaEl = document.getElementById(`scr${screenNum}-lma`);
+        const actEl = document.getElementById(`scr${screenNum}-activity`);
+        const rotEl = document.getElementById(`scr${screenNum}-rot`);
+        const freezeEl = document.getElementById(`scr${screenNum}-freezes`);
+        
+        if (!stateEl) return;
+        
+        // 1. 状態表示
+        let stateText = "IDLE";
+        let stateColor = "#8892b0";
+        if (player.isLocked) {
+            stateText = "LOCKED (L3)";
+            stateColor = "#00bfff";
+        } else if (player.mediaEl.paused) {
+            if (player.freezeTimeout) {
+                stateText = "FREEZING";
+                stateColor = "#ff7700";
+            } else if (player.mediaEl.src && player.mediaEl.currentTime > 0) {
+                stateText = "PAUSED";
+                stateColor = "#ffaa00";
+            } else {
+                stateText = "IDLE";
+            }
+        } else {
+            stateText = "PLAYING";
+            stateColor = "#00ffaa";
+        }
+        stateEl.textContent = stateText;
+        stateEl.style.color = stateColor;
+        
+        // 2. メタデータ表示
+        if (player.currentVideoData) {
+            const vData = player.currentVideoData;
+            videoEl.textContent = vData[0];
+            
+            const w = vData[IDX.WEIGHT];
+            const t = vData[IDX.TIME];
+            const s = vData[IDX.SPACE];
+            const h = vData[IDX.HARD] || vData[IDX.HARDNESS] || 0;
+            lmaEl.textContent = `W:${w} T:${t} S:${s} H:${h}`;
+            
+            const actScore = vData.activity || (w + t + h) / 3;
+            actEl.textContent = `${actScore.toFixed(2)}`;
+            
+            const rot = player.currentRotationAngle || 90;
+            const origDir = vData[IDX.DIR] || "S";
+            rotEl.textContent = `${rot}° / ${origDir} (Flow:${player.currentFlowDir > 0 ? "L→R" : "R→L"})`;
+            
+            const freezes = window.freezeFramesPool ? (window.freezeFramesPool[vData[0]] || []) : [];
+            if (freezes.length > 0) {
+                freezeEl.textContent = freezes.map(sec => `${(sec * 30).toFixed(0)}f (${sec.toFixed(1)}s)`).join(", ");
+            } else {
+                freezeEl.textContent = "None";
+            }
+        } else {
+            videoEl.textContent = "-";
+            lmaEl.textContent = "-";
+            actEl.textContent = "-";
+            rotEl.textContent = "-";
+            freezeEl.textContent = "-";
+        }
+    });
+}
+
+// 意思決定ログに追記する関数
+function addDecisionLog(message, type = "info") {
+    const logEl = document.getElementById("decision-log");
+    if (!logEl) return;
+    
+    const timeStr = new Date().toLocaleTimeString();
+    const line = document.createElement("div");
+    line.className = `log-line ${type}`;
+    line.textContent = `[${timeStr}] ${message}`;
+    
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+    
+    while (logEl.children.length > 100) {
+        logEl.removeChild(logEl.firstChild);
+    }
+}
+window.addDecisionLog = addDecisionLog; // player.jsからも呼べるようにグローバル化
 
 document.getElementById('start-overlay').addEventListener('click', initSkinslides, { once: true });

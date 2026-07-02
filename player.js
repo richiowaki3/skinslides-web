@@ -1,5 +1,6 @@
 window.freezeFramesPool = {};
 window.videoPausePer = 100; // デフォルトで100%発生
+window.videosMuted = false;  // 動画の音声をデフォルトでON（ミュート解除）
 
 // pauseTime.xml からフリーズフレーム情報をロードして秒数に変換
 window.loadFreezeFrames = async function() {
@@ -47,8 +48,8 @@ class VideoPlayer {
         this.mediaEl = document.getElementById(elementId);
         this.isHiddenAudioOnly = isHiddenAudioOnly;
         
-        // 第4プレイヤー（音声専門）以外はミュートにしておく
-        this.mediaEl.muted = !isHiddenAudioOnly; 
+        // 音声専用プレイヤーは常にミュート解除、動画プレイヤーは window.videosMuted に従う
+        this.mediaEl.muted = isHiddenAudioOnly ? false : window.videosMuted; 
         
         // 状態管理用
         this.isLocked = false;
@@ -62,6 +63,18 @@ class VideoPlayer {
         this.freezeTimeout = null;
         this.freezeTimes = null;
         this.triggeredFreezes = null;
+
+        // 分析モニター用の状態変数
+        this.currentVideoData = null;
+        this.currentRotationAngle = 90;
+        this.currentFlowDir = 1;
+    }
+
+    // ミュート状態を動的に変更
+    setMute(isMuted) {
+        if (!this.isHiddenAudioOnly) {
+            this.mediaEl.muted = isMuted;
+        }
     }
 
     // 従来のオーディオ再生用メソッドを維持
@@ -330,6 +343,11 @@ class VideoPlayer {
                             const pauseSec = pauseFrames / 30.0; // 30fps換算
 
                             console.log(`[player] Freeze triggered at ${cf.toFixed(2)}s (target ${pt.toFixed(2)}s). Pausing for ${pauseSec.toFixed(2)}s (${pauseFrames} frames).`);
+
+                            if (window.addDecisionLog) {
+                                const screenNum = this.mediaEl.id.split('-').pop();
+                                window.addDecisionLog(`Screen ${screenNum}: Freeze frame triggered at ${cf.toFixed(2)}s (target ${pt.toFixed(2)}s). Pausing for ${pauseSec.toFixed(2)}s (${pauseFrames} frames).`, 'warning');
+                            }
 
                             this.freezeTimeout = setTimeout(() => {
                                 this.freezeTimeout = null;

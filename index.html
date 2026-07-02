@@ -8,16 +8,20 @@
             margin: 0;
             background-color: #000;
             display: flex;
-            justify-content: center;
+            flex-direction: column;
             align-items: center;
-            height: 100vh;
-            overflow: hidden;
+            min-height: 100vh;
+            overflow-y: auto;
             color: #fff;
             font-family: sans-serif;
         }
         .screen-container {
             display: flex;
             gap: 20px;
+            height: 100vh;
+            align-items: center;
+            justify-content: center;
+            box-sizing: border-box;
         }
         .screen-wrapper {
             position: relative;
@@ -45,9 +49,9 @@
             display: none;
         }
         #start-overlay {
-            position: absolute;
+            position: fixed;
             top: 0; left: 0;
-            width: 100%; height: 100%;
+            width: 100vw; height: 100vh;
             background: rgba(0,0,0,0.85);
             display: flex;
             flex-direction: column;
@@ -72,6 +76,167 @@
             background-color: #fff;
             color: #000;
         }
+
+        /* Analysis Dashboard Styles */
+        .analysis-dashboard {
+            width: 100%;
+            max-width: 1000px;
+            margin: 0 auto 60px auto;
+            padding: 24px;
+            background: rgba(15, 15, 25, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            box-sizing: border-box;
+            color: #f0f2f5;
+        }
+        .dashboard-title-area {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        .dashboard-title {
+            margin: 0;
+            font-size: 1.2rem;
+            font-weight: 800;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            background: linear-gradient(45deg, #00bfff, #00ffaa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .audio-toggle-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #fff;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .audio-toggle-btn:hover {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: #00ffaa;
+        }
+        .timeline-section {
+            background: rgba(0,0,0,0.3);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 24px;
+            border: 1px solid rgba(255,255,255,0.03);
+        }
+        .timeline-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+            color: #8892b0;
+        }
+        .timeline-canvas-wrapper {
+            position: relative;
+            width: 100%;
+        }
+        #timeline-canvas {
+            display: block;
+            width: 100%;
+            height: 80px;
+            background: rgba(5, 5, 8, 0.6);
+            border-radius: 6px;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.8);
+        }
+        .timeline-legend {
+            display: flex;
+            gap: 20px;
+            margin-top: 10px;
+            font-size: 0.8rem;
+            color: #8892b0;
+            justify-content: center;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .legend-color {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 3px;
+        }
+        .legend-color.attack { background: #ff7700; }
+        .legend-color.swell { background: #00bfff; }
+        .legend-color.roll { background: #00ffaa; }
+        .legend-color.quiet { background: #555577; }
+        
+        .monitor-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 20px;
+        }
+        .monitor-card {
+            background: rgba(255,255,255,0.02);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 8px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .monitor-card.log-card {
+            grid-column: span 2;
+        }
+        @media (max-width: 900px) {
+            .monitor-card.log-card {
+                grid-column: span 1;
+            }
+        }
+        .card-header {
+            font-weight: 600;
+            font-size: 0.85rem;
+            letter-spacing: 1px;
+            color: #8892b0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            padding-bottom: 6px;
+        }
+        .card-body {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            font-size: 0.85rem;
+        }
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+        }
+        .stat-label {
+            color: #8892b0;
+        }
+        .stat-val {
+            font-weight: 600;
+            font-family: monospace;
+        }
+        .scroll-log {
+            height: 140px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 0.8rem;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .log-line {
+            border-bottom: 1px solid rgba(255,255,255,0.01);
+            padding-bottom: 4px;
+        }
+        .log-line.info { color: #00bfff; }
+        .log-line.success { color: #00ffaa; }
+        .log-line.warning { color: #ff7700; }
     </style>
 </head>
 <body>
@@ -83,13 +248,85 @@
     <!-- 可視3画面 (鬣フレーム・90度回転) -->
     <div class="screen-container">
         <div class="screen-wrapper">
-            <video id="player-1" class="screen" muted playsinline></video>
+            <video id="player-1" class="screen" playsinline></video>
         </div>
         <div class="screen-wrapper">
-            <video id="player-2" class="screen" muted playsinline></video>
+            <video id="player-2" class="screen" playsinline></video>
         </div>
         <div class="screen-wrapper">
-            <video id="player-3" class="screen" muted playsinline></video>
+            <video id="player-3" class="screen" playsinline></video>
+        </div>
+    </div>
+
+    <!-- 分析ダッシュボード (スクロールすると表示されるエリア) -->
+    <div class="analysis-dashboard">
+        <div class="dashboard-title-area">
+            <h2 class="dashboard-title">Real-Time Analysis & Execution Monitor</h2>
+            <button id="toggle-video-audio" class="audio-toggle-btn">Video Audio: ON</button>
+        </div>
+        
+        <!-- タイムラインセクション -->
+        <div class="timeline-section">
+            <div class="timeline-header">
+                <span class="timeline-track-name">Track: <span id="ana-track-name">None</span></span>
+                <span class="timeline-time">Time: <span id="ana-time">0.0s / 0.0s</span></span>
+            </div>
+            <div class="timeline-canvas-wrapper">
+                <canvas id="timeline-canvas" height="80"></canvas>
+            </div>
+            <div class="timeline-legend">
+                <span class="legend-item"><span class="legend-color attack"></span>Attack (L4)</span>
+                <span class="legend-item"><span class="legend-color swell"></span>Swell (L3)</span>
+                <span class="legend-item"><span class="legend-color roll"></span>Roll (L2)</span>
+                <span class="legend-item"><span class="legend-color quiet"></span>Quiet (L1)</span>
+            </div>
+        </div>
+        
+        <!-- モニターカードグリッド -->
+        <div class="monitor-grid">
+            <!-- Screen 1 Status -->
+            <div class="monitor-card" id="card-screen-1">
+                <div class="card-header">SCREEN 1</div>
+                <div class="card-body">
+                    <div class="stat-row"><span class="stat-label">State:</span><span class="stat-val" id="scr1-state">IDLE</span></div>
+                    <div class="stat-row"><span class="stat-label">Video:</span><span class="stat-val" id="scr1-video">-</span></div>
+                    <div class="stat-row"><span class="stat-label">LMA (W,T,S,H):</span><span class="stat-val" id="scr1-lma">-</span></div>
+                    <div class="stat-row"><span class="stat-label">Activity Level:</span><span class="stat-val" id="scr1-activity">-</span></div>
+                    <div class="stat-row"><span class="stat-label">Rotation / Dir:</span><span class="stat-val" id="scr1-rot">-</span></div>
+                    <div class="stat-row"><span class="stat-label">Freezes:</span><span class="stat-val" id="scr1-freezes">-</span></div>
+                </div>
+            </div>
+            <!-- Screen 2 Status -->
+            <div class="monitor-card" id="card-screen-2">
+                <div class="card-header">SCREEN 2</div>
+                <div class="card-body">
+                    <div class="stat-row"><span class="stat-label">State:</span><span class="stat-val" id="scr2-state">IDLE</span></div>
+                    <div class="stat-row"><span class="stat-label">Video:</span><span class="stat-val" id="scr2-video">-</span></div>
+                    <div class="stat-row"><span class="stat-label">LMA (W,T,S,H):</span><span class="stat-val" id="scr2-lma">-</span></div>
+                    <div class="stat-row"><span class="stat-label">Activity Level:</span><span class="stat-val" id="scr2-activity">-</span></div>
+                    <div class="stat-row"><span class="stat-label">Rotation / Dir:</span><span class="stat-val" id="scr2-rot">-</span></div>
+                    <div class="stat-row"><span class="stat-label">Freezes:</span><span class="stat-val" id="scr2-freezes">-</span></div>
+                </div>
+            </div>
+            <!-- Screen 3 Status -->
+            <div class="monitor-card" id="card-screen-3">
+                <div class="card-header">SCREEN 3</div>
+                <div class="card-body">
+                    <div class="stat-row"><span class="stat-label">State:</span><span class="stat-val" id="scr3-state">IDLE</span></div>
+                    <div class="stat-row"><span class="stat-label">Video:</span><span class="stat-val" id="scr3-video">-</span></div>
+                    <div class="stat-row"><span class="stat-label">LMA (W,T,S,H):</span><span class="stat-val" id="scr3-lma">-</span></div>
+                    <div class="stat-row"><span class="stat-label">Activity Level:</span><span class="stat-val" id="scr3-activity">-</span></div>
+                    <div class="stat-row"><span class="stat-label">Rotation / Dir:</span><span class="stat-val" id="scr3-rot">-</span></div>
+                    <div class="stat-row"><span class="stat-label">Freezes:</span><span class="stat-val" id="scr3-freezes">-</span></div>
+                </div>
+            </div>
+            <!-- Decision Log Card -->
+            <div class="monitor-card log-card">
+                <div class="card-header">EXECUTIVE DECISION LOG</div>
+                <div class="card-body scroll-log" id="decision-log">
+                    <div class="log-line text-muted">Awaiting start...</div>
+                </div>
+            </div>
         </div>
     </div>
     

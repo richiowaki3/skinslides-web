@@ -2,6 +2,7 @@ window.freezeFramesPool = {};
 window.videoPausePer = 100; // デフォルトで100%発生
 window.videosMuted = false;  // 動画の音声をデフォルトでON（ミュート解除）
 window.videoGainVolume = 1.0; // 動画の音量ゲイン（初期値 1.0）
+window.VIDEO_CACHE_BUST = "?v=2"; // キャッシュ破棄用クエリ（音付き・コントラスト修正動画反映用）
 
 // pauseTime.xml からフリーズフレーム情報をロードして秒数に変換
 window.loadFreezeFrames = async function() {
@@ -99,7 +100,7 @@ class VideoPlayer {
                 }
             }
             
-            this.mediaEl.src = basePath + finalFileName;
+            this.mediaEl.src = basePath + finalFileName + (this.isHiddenAudioOnly ? "" : (window.VIDEO_CACHE_BUST || ""));
             // 初期音量ゲインを適用
             this.mediaEl.volume = Math.min(1.0, window.videoGainVolume !== undefined ? window.videoGainVolume : 1.0);
             
@@ -141,7 +142,7 @@ class VideoPlayer {
                 finalFileName = `${match[1]}-Sss720p.mp4`;
             }
             
-            this.mediaEl.src = basePath + finalFileName;
+            this.mediaEl.src = basePath + finalFileName + (this.isHiddenAudioOnly ? "" : (window.VIDEO_CACHE_BUST || ""));
             this.mediaEl.volume = Math.min(1.0, window.videoGainVolume !== undefined ? window.videoGainVolume : 1.0);
             this.mediaEl.style.opacity = 1;
             this.mediaEl.classList.add("playing");
@@ -177,7 +178,7 @@ class VideoPlayer {
                 finalFileName = `${match[1]}-Sss720p.mp4`;
             }
             
-            this.mediaEl.src = basePath + finalFileName;
+            this.mediaEl.src = basePath + finalFileName + (this.isHiddenAudioOnly ? "" : (window.VIDEO_CACHE_BUST || ""));
             this.mediaEl.volume = Math.min(1.0, window.videoGainVolume !== undefined ? window.videoGainVolume : 1.0);
             this.mediaEl.style.opacity = 0;
             this.mediaEl.classList.add("playing");
@@ -267,7 +268,7 @@ class VideoPlayer {
                 finalFileName = `${match[1]}-Sss720p.mp4`;
             }
             
-            this.mediaEl.src = basePath + finalFileName;
+            this.mediaEl.src = basePath + finalFileName + (this.isHiddenAudioOnly ? "" : (window.VIDEO_CACHE_BUST || ""));
             this.mediaEl.volume = Math.min(1.0, window.videoGainVolume !== undefined ? window.videoGainVolume : 1.0);
             this.mediaEl.style.opacity = 1;
             this.mediaEl.classList.add("playing");
@@ -299,7 +300,7 @@ class VideoPlayer {
                 finalFileName = `${match[1]}-Sss720p.mp4`;
             }
             
-            this.mediaEl.src = basePath + finalFileName;
+            this.mediaEl.src = basePath + finalFileName + (this.isHiddenAudioOnly ? "" : (window.VIDEO_CACHE_BUST || ""));
             this.mediaEl.volume = Math.min(1.0, window.videoGainVolume !== undefined ? window.videoGainVolume : 1.0);
             this.mediaEl.style.opacity = 1;
             this.mediaEl.classList.add("playing");

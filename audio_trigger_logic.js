@@ -83,6 +83,22 @@ async function loadMetadata() {
             audioToggleBtn.style.borderColor = window.videosMuted ? "rgba(255,255,255,0.1)" : "var(--accent-green)";
         }
 
+        // 動画ゲインスライダーのイベントリスナー設定
+        const gainSlider = document.getElementById("video-gain-slider");
+        const gainVal = document.getElementById("video-gain-val");
+        if (gainSlider) {
+            gainSlider.addEventListener("input", () => {
+                const val = parseFloat(gainSlider.value);
+                window.videoGainVolume = val;
+                if (gainVal) gainVal.textContent = `${val.toFixed(1)}x`;
+                players.forEach(p => p.setGain(val));
+            });
+            // 初期状態の適用
+            const initialVal = window.videoGainVolume || 1.0;
+            gainSlider.value = initialVal;
+            if (gainVal) gainVal.textContent = `${initialVal.toFixed(1)}x`;
+        }
+
         // Populate track select dropdown
         populateTrackSelect();
     } catch (e) {

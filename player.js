@@ -1,6 +1,7 @@
 window.freezeFramesPool = {};
 window.videoPausePer = 100; // デフォルトで100%発生
 window.videosMuted = false;  // 動画の音声をデフォルトでON（ミュート解除）
+window.videoGainVolume = 1.0; // 動画の音量ゲイン（初期値 1.0）
 
 // pauseTime.xml からフリーズフレーム情報をロードして秒数に変換
 window.loadFreezeFrames = async function() {
@@ -48,6 +49,11 @@ class VideoPlayer {
         this.mediaEl = document.getElementById(elementId);
         this.isHiddenAudioOnly = isHiddenAudioOnly;
         
+        if (!isHiddenAudioOnly) {
+            // Web Audio API でのゲイン増幅（CORS制限対策）
+            this.mediaEl.crossOrigin = "anonymous";
+        }
+
         // 音声専用プレイヤーは常にミュート解除、動画プレイヤーは window.videosMuted に従う
         this.mediaEl.muted = isHiddenAudioOnly ? false : window.videosMuted; 
         
@@ -68,12 +74,58 @@ class VideoPlayer {
         this.currentVideoData = null;
         this.currentRotationAngle = 90;
         this.currentFlowDir = 1;
+
+        // Web Audio API関連
+        this.audioCtx = null;
+        this.source = null;
+        this.gainNode = null;
     }
 
     // ミュート状態を動的に変更
     setMute(isMuted) {
         if (!this.isHiddenAudioOnly) {
             this.mediaEl.muted = isMuted;
+        }
+    }
+
+    // ゲインボリュームを動的に変更 (Web Audio API or HTML5 fallback)
+    setGain(value) {
+        if (this.isHiddenAudioOnly) return;
+        if (this.gainNode) {
+            this.gainNode.gain.setValueAtTime(value, this.audioCtx.currentTime);
+        } else {
+            // HTML5標準ボリュームは最大1.0のためクリップ
+            this.mediaEl.volume = Math.min(1.0, value);
+        }
+    }
+
+    // Web Audio Context の遅延初期化
+    initAudioContext() {
+        if (this.isHiddenAudioOnly) return;
+        if (this.gainNode) {
+            if (this.audioCtx && this.audioCtx.state === 'suspended') {
+                this.audioCtx.resume();
+            }
+            return;
+        }
+
+        try {
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContextClass) return;
+
+            this.audioCtx = new AudioContextClass();
+            this.source = this.audioCtx.createMediaElementSource(this.mediaEl);
+            this.gainNode = this.audioCtx.createGain();
+
+            this.source.connect(this.gainNode);
+            this.gainNode.connect(this.audioCtx.destination);
+
+            // グローバル音量ゲインを適用
+            const currentGain = window.videoGainVolume !== undefined ? window.videoGainVolume : 1.0;
+            this.gainNode.gain.setValueAtTime(currentGain, this.audioCtx.currentTime);
+            console.log(`[player] Web Audio Gain initialized for ${this.mediaEl.id} with gain ${currentGain}`);
+        } catch (e) {
+            console.warn(`[player] Web Audio Gain init failed for ${this.mediaEl.id}:`, e);
         }
     }
 
@@ -94,6 +146,7 @@ class VideoPlayer {
             
             this.mediaEl.src = basePath + finalFileName;
             this.mediaEl.volume = 1.0;
+            this.initAudioContext();
             
             this.mediaEl.play().then(() => {
                 if (!this.isHiddenAudioOnly) {
@@ -136,6 +189,7 @@ class VideoPlayer {
             this.mediaEl.src = basePath + finalFileName;
             this.mediaEl.style.opacity = 1;
             this.mediaEl.classList.add("playing");
+            this.initAudioContext();
             
             this.mediaEl.play().then(() => {
                 this.startFreezeMonitor(fileName);
@@ -193,6 +247,7 @@ class VideoPlayer {
                         this.fadeInterval = null;
                         
                         // フェードイン完了後に再生開始
+                        this.initAudioContext();
                         this.mediaEl.play().then(() => {
                             this.startFreezeMonitor(fileName);
                         }).catch(e => {
@@ -260,6 +315,7 @@ class VideoPlayer {
             this.mediaEl.src = basePath + finalFileName;
             this.mediaEl.style.opacity = 1;
             this.mediaEl.classList.add("playing");
+            this.initAudioContext();
             
             this.mediaEl.play().then(() => {
                 this.startFreezeMonitor(fileName);
@@ -291,6 +347,7 @@ class VideoPlayer {
             this.mediaEl.src = basePath + finalFileName;
             this.mediaEl.style.opacity = 1;
             this.mediaEl.classList.add("playing");
+            this.initAudioContext();
             
             this.mediaEl.play().then(() => {
                 this.startFreezeMonitor(fileName);

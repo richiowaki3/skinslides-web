@@ -45,26 +45,23 @@ window.loadFreezeFrames = async function() {
     }
 };
 
+window.videoFiles = [
+    "01.mov", "02.mov", "03.mov", "04.mov", "05.mov", "06.mov", "07.mov", "08.mov", 
+    "09.mov", "10.mov", "11.mov", "12.mov", "13.mov", "14.mov", "15.mov", "16.mov", 
+    "17.mov", "18.mov"
+];
+
 class VideoPlayer {
     constructor(elementId, isHiddenAudioOnly = false) {
-        this.mediaEl = document.getElementById(elementId);
+        this.elementId = elementId;
         this.isHiddenAudioOnly = isHiddenAudioOnly;
+        this.mediaEl = document.getElementById(elementId);
         
-        if (!isHiddenAudioOnly) {
-            // Web Audio API でのゲイン増幅（CORS制限対策。VIDEO_CACHE_BUST と併用することでキャッシュ競合を回避）
-            this.mediaEl.crossOrigin = "anonymous";
-            
-            // CORSエラー監視: 万が一R2のCORS設定不足でブロックされた場合は、動画を表示させるためにDOM要素をクローンして通常再生へフォールバック
-            this.mediaEl.addEventListener('error', (e) => {
-                const err = this.mediaEl.error;
-                if (err && (err.code === 4 || err.code === 3) && this.mediaEl.crossOrigin === "anonymous") {
-                    this.handleCorsError();
-                }
-            });
+        if (isHiddenAudioOnly) {
+            this.mediaEl.muted = false;
+        } else {
+            this.mediaEl.muted = window.videosMuted; 
         }
-
-        // 音声専用プレイヤーは常にミュート解除、動画プレイヤーは window.videosMuted に従う
-        this.mediaEl.muted = isHiddenAudioOnly ? false : window.videosMuted; 
         
         // 状態管理用
         this.isLocked = false;
@@ -87,78 +84,115 @@ class VideoPlayer {
         this.currentRotationAngle = 90;
         this.currentFlowDir = 1;
 
-        // Web Audio API関連
-        this.audioCtx = null;
-        this.source = null;
-        this.gainNode = null;
-        this.useWebAudio = !isHiddenAudioOnly; // 動画プレイヤーはWeb Audioを使用（エラー時はfalseへ）
+        this.useWebAudio = !isHiddenAudioOnly;
+    }
+
+    // 動画プール要素の生成・遅延初期化
+    initializePool(basePath) {
+        if (this.isHiddenAudioOnly) return;
+        
+        const oldVideo = this.mediaEl;
+        if (!oldVideo) return;
+        
+        const parent = oldVideo.parentNode;
+        
+        // 元の動画要素をDOMから削除
+        oldVideo.remove();
+        
+        // 18個のビデオ要素を作成し、最初からメモリにプリロード
+        window.videoFiles.forEach(file => {
+            const video = document.createElement("video");
+            video.id = `${this.elementId}-${file}`;
+            video.className = oldVideo.className;
+            video.playsInline = true;
+            video.webkitPlaysinline = true;
+            video.preload = "auto";
+            video.muted = window.videosMuted;
+            
+            // スタイルを設定 (重ね合わせるために絶対配置、初期状態は透明)
+            video.style.opacity = 0;
+            video.style.position = "absolute";
+            video.style.top = "0";
+            video.style.left = "0";
+            video.style.width = "100%";
+            video.style.height = "100%";
+            video.style.objectFit = "cover";
+            video.style.transform = "rotate(90deg)"; 
+            
+            let finalFileName = file;
+            const match = file.match(/(\d+)\.(mov|mp4)/i);
+            if (match) {
+                finalFileName = `${match[1]}-Sss720p.mp4`;
+            }
+            
+            video.crossOrigin = "anonymous";
+            video.src = basePath + finalFileName + (window.VIDEO_CACHE_BUST || "");
+            
+            // ロード時のCORSエラーの安全な自動フォールバック
+            video.addEventListener('error', (e) => {
+                const err = video.error;
+                if (err && (err.code === 4 || err.code === 3) && video.crossOrigin === "anonymous") {
+                    console.warn(`[player] CORS error on ${video.id}. Falling back to standard volume...`);
+                    if (window.addDecisionLog) {
+                        const screenNum = video.id.split('-')[1];
+                        window.addDecisionLog(`Screen ${screenNum} (${file}): CORS block. Falling back to standard volume.`, 'warning');
+                    }
+                    video.removeAttribute("crossorigin");
+                    video.src = basePath + finalFileName + (window.VIDEO_CACHE_BUST || "");
+                    video.load();
+                }
+            });
+            
+            parent.appendChild(video);
+        });
+        
+        console.log(`[player] Initialized pool of ${window.videoFiles.length} preloaded video elements for screen ${this.elementId}.`);
+    }
+
+    // ファイル名に応じたプリロード済み動画要素を取得
+    getVideoElement(fileName) {
+        if (this.isHiddenAudioOnly) {
+            return this.mediaEl;
+        }
+        return document.getElementById(`${this.elementId}-${fileName}`);
     }
 
     // ミュート状態を動的に変更
     setMute(isMuted) {
-        if (!this.isHiddenAudioOnly) {
-            this.mediaEl.muted = isMuted;
+        if (this.isHiddenAudioOnly) {
+            if (this.mediaEl) this.mediaEl.muted = isMuted;
+            return;
         }
+        window.videoFiles.forEach(file => {
+            const video = document.getElementById(`${this.elementId}-${file}`);
+            if (video) video.muted = isMuted;
+        });
     }
 
     // ゲインボリュームを動的に変更 (Web Audio API or HTML5 fallback)
     setGain(value) {
-        if (this.isHiddenAudioOnly) return;
-        if (this.useWebAudio && this.gainNode) {
-            this.gainNode.gain.setValueAtTime(value, this.audioCtx.currentTime);
-        } else {
-            // Web Audio無効時はHTML5標準ボリューム（最大1.0）
-            this.mediaEl.volume = Math.min(1.0, value);
+        if (this.isHiddenAudioOnly) {
+            if (this.mediaEl) this.mediaEl.volume = Math.min(1.0, value);
+            return;
         }
-    }
-
-    // CORSエラー時の安全なフォールバック処理 (DOM要素をクローンして再生成)
-    handleCorsError() {
-        if (!this.useWebAudio) return;
-        this.useWebAudio = false;
-
-        const screenNum = this.mediaEl.id.split('-').pop();
-        console.warn(`[player] CORS error detected on Screen ${screenNum}. Re-creating element to fallback to standard volume...`);
-        if (window.addDecisionLog) {
-            window.addDecisionLog(`Screen ${screenNum}: CORS block from server. Re-creating video element to bypass block. Gain boost disabled (clamped to 1.0x).`, 'warning');
-        }
-
-        const oldEl = this.mediaEl;
-        const newEl = oldEl.cloneNode(true);
-        newEl.removeAttribute("crossorigin"); // CORS要求を解除
-
-        // 再度エラーイベントハンドラを登録（CORS以外のロードエラー検知用）
-        newEl.addEventListener('error', (e) => {
-            console.error(`[player] Screen ${screenNum} fallback element load error:`, newEl.error);
+        window.videoFiles.forEach(file => {
+            const video = document.getElementById(`${this.elementId}-${file}`);
+            if (video) {
+                if (video.gainNode) {
+                    video.gainNode.gain.setValueAtTime(value, video.audioCtx.currentTime);
+                } else {
+                    video.volume = Math.min(1.0, value);
+                }
+            }
         });
-
-        oldEl.parentNode.replaceChild(newEl, oldEl);
-        this.mediaEl = newEl;
-
-        // Web Audio接続を無効化
-        this.audioCtx = null;
-        this.source = null;
-        this.gainNode = null;
-
-        // 再ロード
-        const currentSrc = oldEl.src;
-        this.mediaEl.src = currentSrc;
-        this.mediaEl.load();
-        
-        // 再生再開（再生中だった場合）
-        if (oldEl.className.includes("playing")) {
-            this.mediaEl.play().catch(err => {
-                console.error(`[player] Screen ${screenNum} fallback play failed:`, err);
-            });
-        }
     }
 
     // Web Audio Context の遅延初期化
-    initAudioContext() {
+    initAudioContext(video) {
         if (this.isHiddenAudioOnly || !this.useWebAudio) return;
-        if (this.gainNode) {
-            if (this.audioCtx && this.audioCtx.state === 'suspended') {
-                this.audioCtx.resume();
+        if (video.gainNode) {
+            if (video.audioCtx && video.audioCtx.state === 'suspended') {
+                video.audioCtx.resume();
             }
             return;
         }
@@ -167,46 +201,45 @@ class VideoPlayer {
             const AudioContextClass = window.AudioContext || window.webkitAudioContext;
             if (!AudioContextClass) return;
 
-            this.audioCtx = new AudioContextClass();
-            this.source = this.audioCtx.createMediaElementSource(this.mediaEl);
-            this.gainNode = this.audioCtx.createGain();
+            video.audioCtx = new AudioContextClass();
+            video.source = video.audioCtx.createMediaElementSource(video);
+            video.gainNode = video.audioCtx.createGain();
 
-            this.source.connect(this.gainNode);
-            this.gainNode.connect(this.audioCtx.destination);
+            video.source.connect(video.gainNode);
+            video.gainNode.connect(video.audioCtx.destination);
 
-            // グローバル音量ゲインを適用
+            // 現在のスライダー音量を適用
             const currentGain = window.videoGainVolume !== undefined ? window.videoGainVolume : 1.0;
-            this.gainNode.gain.setValueAtTime(currentGain, this.audioCtx.currentTime);
-            console.log(`[player] Web Audio Gain initialized for ${this.mediaEl.id} with gain ${currentGain}`);
+            video.gainNode.gain.setValueAtTime(currentGain, video.audioCtx.currentTime);
+            console.log(`[player] Web Audio Gain initialized for ${video.id} with gain ${currentGain}`);
         } catch (e) {
-            console.warn(`[player] Web Audio Gain init failed for ${this.mediaEl.id}:`, e);
-            this.useWebAudio = false;
+            console.warn(`[player] Web Audio Gain init failed for ${video.id}:`, e);
         }
     }
 
-    // 従来のオーディオ再生用メソッドを維持
+    // 従来のオーディオ再生用メソッド
     playSequence(fileName, waitDelaySec = 0) {
         this.stop();
+        const video = this.getVideoElement(fileName);
+        if (!video) return Promise.resolve();
+        this.mediaEl = video;
+
         return new Promise((resolve) => {
             this.activeResolve = resolve;
-            const basePath = this.isHiddenAudioOnly ? AUDIO_BASE_PATH : VIDEO_BASE_PATH;
             
-            let finalFileName = fileName;
-            if (!this.isHiddenAudioOnly) {
-                const match = fileName.match(/(\d+)\.(mov|mp4)/i);
-                if (match) {
-                    finalFileName = `${match[1]}-Sss720p.mp4`;
-                }
+            // 音量設定
+            if (video.gainNode) {
+                video.gainNode.gain.setValueAtTime(window.videoGainVolume, video.audioCtx.currentTime);
+            } else {
+                video.volume = Math.min(1.0, window.videoGainVolume !== undefined ? window.videoGainVolume : 1.0);
             }
             
-            this.mediaEl.src = basePath + finalFileName + (this.isHiddenAudioOnly ? "" : (window.VIDEO_CACHE_BUST || ""));
-            this.mediaEl.volume = Math.min(1.0, window.videoGainVolume !== undefined ? window.videoGainVolume : 1.0);
-            this.initAudioContext();
+            this.initAudioContext(video);
             
-            this.mediaEl.play().then(() => {
+            video.play().then(() => {
                 if (!this.isHiddenAudioOnly) {
-                    this.mediaEl.classList.add("playing");
-                    this.mediaEl.style.opacity = 1;
+                    video.classList.add("playing");
+                    video.style.opacity = 1;
                     this.startFreezeMonitor(fileName);
                 }
             }).catch(e => {
@@ -214,10 +247,10 @@ class VideoPlayer {
                 resolve(); 
             });
 
-            this.mediaEl.onended = () => {
+            video.onended = () => {
                 if (!this.isHiddenAudioOnly) {
-                    this.mediaEl.classList.remove("playing");
-                    this.mediaEl.src = "";
+                    video.classList.remove("playing");
+                    video.style.opacity = 0;
                 }
                 
                 if (waitDelaySec > 0) {
@@ -232,22 +265,25 @@ class VideoPlayer {
     // レベル 1: 静かで変化が少ない（最後のフレームでフリーズして待機）
     playLevel1(fileName) {
         this.stop();
+        const video = this.getVideoElement(fileName);
+        if (!video) return Promise.resolve();
+        this.mediaEl = video;
+
         return new Promise((resolve) => {
             this.activeResolve = resolve;
-            const basePath = VIDEO_BASE_PATH;
-            let finalFileName = fileName;
-            const match = fileName.match(/(\d+)\.(mov|mp4)/i);
-            if (match) {
-                finalFileName = `${match[1]}-Sss720p.mp4`;
+            
+            // 音量設定
+            if (video.gainNode) {
+                video.gainNode.gain.setValueAtTime(window.videoGainVolume, video.audioCtx.currentTime);
+            } else {
+                video.volume = Math.min(1.0, window.videoGainVolume !== undefined ? window.videoGainVolume : 1.0);
             }
             
-            this.mediaEl.src = basePath + finalFileName + (this.isHiddenAudioOnly ? "" : (window.VIDEO_CACHE_BUST || ""));
-            this.mediaEl.volume = Math.min(1.0, window.videoGainVolume !== undefined ? window.videoGainVolume : 1.0);
-            this.mediaEl.style.opacity = 1;
-            this.mediaEl.classList.add("playing");
-            this.initAudioContext();
+            video.style.opacity = 1;
+            video.classList.add("playing");
+            this.initAudioContext(video);
             
-            this.mediaEl.play().then(() => {
+            video.play().then(() => {
                 this.startFreezeMonitor(fileName);
             }).catch(e => {
                 console.error(`L1再生エラー [${fileName}]:`, e);
@@ -255,41 +291,44 @@ class VideoPlayer {
             });
 
             this.timeUpdateHandler = () => {
-                if (this.mediaEl.duration && this.mediaEl.currentTime >= this.mediaEl.duration - 0.1) {
-                    this.mediaEl.pause();
-                    this.mediaEl.removeEventListener('timeupdate', this.timeUpdateHandler);
+                if (video.duration && video.currentTime >= video.duration - 0.1) {
+                    video.pause();
+                    video.removeEventListener('timeupdate', this.timeUpdateHandler);
                     this.timeUpdateHandler = null;
                     resolve();
                 }
             };
-            this.mediaEl.addEventListener('timeupdate', this.timeUpdateHandler);
+            video.addEventListener('timeupdate', this.timeUpdateHandler);
         });
     }
 
     // レベル 2: やや動きがある（最初のフレームでフリーズ＆フェードイン、再生、最後のフレームでフリーズ＆フェードアウト）
     playLevel2(fileName, fadeTimeSec) {
         this.stop();
+        const video = this.getVideoElement(fileName);
+        if (!video) return Promise.resolve();
+        this.mediaEl = video;
+
         return new Promise((resolve) => {
             this.activeResolve = resolve;
-            const basePath = VIDEO_BASE_PATH;
-            let finalFileName = fileName;
-            const match = fileName.match(/(\d+)\.(mov|mp4)/i);
-            if (match) {
-                finalFileName = `${match[1]}-Sss720p.mp4`;
+            
+            // 音量設定
+            if (video.gainNode) {
+                video.gainNode.gain.setValueAtTime(window.videoGainVolume, video.audioCtx.currentTime);
+            } else {
+                video.volume = Math.min(1.0, window.videoGainVolume !== undefined ? window.videoGainVolume : 1.0);
             }
             
-            this.mediaEl.src = basePath + finalFileName + (this.isHiddenAudioOnly ? "" : (window.VIDEO_CACHE_BUST || ""));
-            this.mediaEl.volume = Math.min(1.0, window.videoGainVolume !== undefined ? window.videoGainVolume : 1.0);
-            this.mediaEl.style.opacity = 0;
-            this.mediaEl.classList.add("playing");
+            video.style.opacity = 0;
+            video.classList.add("playing");
             
             // 最初のフレームをロードして一時停止
-            this.mediaEl.currentTime = 0;
-            this.mediaEl.pause();
+            video.currentTime = 0;
+            video.pause();
             
             const onCanPlay = () => {
-                this.mediaEl.removeEventListener('canplay', onCanPlay);
-                this.mediaEl.removeEventListener('error', onError);
+                video.removeEventListener('canplay', onCanPlay);
+                video.removeEventListener('error', onError);
                 
                 // フェードイン処理開始
                 let opacity = 0;
@@ -304,8 +343,8 @@ class VideoPlayer {
                         this.fadeInterval = null;
                         
                         // フェードイン完了後に再生開始
-                        this.initAudioContext();
-                        this.mediaEl.play().then(() => {
+                        this.initAudioContext(video);
+                        video.play().then(() => {
                             this.startFreezeMonitor(fileName);
                         }).catch(e => {
                             console.error(`L2再生エラー [${fileName}]:`, e);
@@ -314,9 +353,9 @@ class VideoPlayer {
                         
                         // 終了検知フェードアウト監視
                         this.timeUpdateHandler = () => {
-                            if (this.mediaEl.duration && this.mediaEl.currentTime >= this.mediaEl.duration - 0.1) {
-                                this.mediaEl.pause(); // 最後のフレームでフリーズ
-                                this.mediaEl.removeEventListener('timeupdate', this.timeUpdateHandler);
+                            if (video.duration && video.currentTime >= video.duration - 0.1) {
+                                video.pause(); // 最後のフレームでフリーズ
+                                video.removeEventListener('timeupdate', this.timeUpdateHandler);
                                 this.timeUpdateHandler = null;
                                 
                                 // フェードアウト処理開始
@@ -331,28 +370,28 @@ class VideoPlayer {
                                         // 完全に終了
                                         this.stop();
                                     } else {
-                                        this.mediaEl.style.opacity = outOpacity;
+                                        video.style.opacity = outOpacity;
                                     }
                                 }, intervalMs);
                             }
                         };
-                        this.mediaEl.addEventListener('timeupdate', this.timeUpdateHandler);
+                        video.addEventListener('timeupdate', this.timeUpdateHandler);
                     } else {
-                        this.mediaEl.style.opacity = opacity;
+                        video.style.opacity = opacity;
                     }
                 }, intervalMs);
             };
             
             const onError = (e) => {
-                console.error(`L2ロードエラー: ${finalFileName}`, e);
-                this.mediaEl.removeEventListener('canplay', onCanPlay);
-                this.mediaEl.removeEventListener('error', onError);
+                console.error(`L2ロードエラー: ${fileName}`, e);
+                video.removeEventListener('canplay', onCanPlay);
+                video.removeEventListener('error', onError);
                 resolve();
             };
             
-            this.mediaEl.addEventListener('canplay', onCanPlay);
-            this.mediaEl.addEventListener('error', onError);
-            this.mediaEl.load();
+            video.addEventListener('canplay', onCanPlay);
+            video.addEventListener('error', onError);
+            video.load();
         });
     }
 
@@ -360,22 +399,25 @@ class VideoPlayer {
     playLevel3(fileName) {
         this.stop();
         this.isLocked = true;
+        const video = this.getVideoElement(fileName);
+        if (!video) return Promise.resolve();
+        this.mediaEl = video;
+
         return new Promise((resolve) => {
             this.activeResolve = resolve;
-            const basePath = VIDEO_BASE_PATH;
-            let finalFileName = fileName;
-            const match = fileName.match(/(\d+)\.(mov|mp4)/i);
-            if (match) {
-                finalFileName = `${match[1]}-Sss720p.mp4`;
+            
+            // 音量設定
+            if (video.gainNode) {
+                video.gainNode.gain.setValueAtTime(window.videoGainVolume, video.audioCtx.currentTime);
+            } else {
+                video.volume = Math.min(1.0, window.videoGainVolume !== undefined ? window.videoGainVolume : 1.0);
             }
             
-            this.mediaEl.src = basePath + finalFileName + (this.isHiddenAudioOnly ? "" : (window.VIDEO_CACHE_BUST || ""));
-            this.mediaEl.volume = Math.min(1.0, window.videoGainVolume !== undefined ? window.videoGainVolume : 1.0);
-            this.mediaEl.style.opacity = 1;
-            this.mediaEl.classList.add("playing");
-            this.initAudioContext();
+            video.style.opacity = 1;
+            video.classList.add("playing");
+            this.initAudioContext(video);
             
-            this.mediaEl.play().then(() => {
+            video.play().then(() => {
                 this.startFreezeMonitor(fileName);
             }).catch(e => {
                 console.error(`L3再生エラー [${fileName}]:`, e);
@@ -383,7 +425,7 @@ class VideoPlayer {
                 resolve();
             });
 
-            this.mediaEl.onended = () => {
+            video.onended = () => {
                 this.isLocked = false;
                 this.stop();
             };
@@ -400,29 +442,32 @@ class VideoPlayer {
             this.lockTimeout = null;
         }, 1200);
 
+        const video = this.getVideoElement(fileName);
+        if (!video) return Promise.resolve();
+        this.mediaEl = video;
+
         return new Promise((resolve) => {
             this.activeResolve = resolve;
-            const basePath = VIDEO_BASE_PATH;
-            let finalFileName = fileName;
-            const match = fileName.match(/(\d+)\.(mov|mp4)/i);
-            if (match) {
-                finalFileName = `${match[1]}-Sss720p.mp4`;
+            
+            // 音量設定
+            if (video.gainNode) {
+                video.gainNode.gain.setValueAtTime(window.videoGainVolume, video.audioCtx.currentTime);
+            } else {
+                video.volume = Math.min(1.0, window.videoGainVolume !== undefined ? window.videoGainVolume : 1.0);
             }
             
-            this.mediaEl.src = basePath + finalFileName + (this.isHiddenAudioOnly ? "" : (window.VIDEO_CACHE_BUST || ""));
-            this.mediaEl.volume = Math.min(1.0, window.videoGainVolume !== undefined ? window.videoGainVolume : 1.0);
-            this.mediaEl.style.opacity = 1;
-            this.mediaEl.classList.add("playing");
-            this.initAudioContext();
+            video.style.opacity = 1;
+            video.classList.add("playing");
+            this.initAudioContext(video);
             
-            this.mediaEl.play().then(() => {
+            video.play().then(() => {
                 this.startFreezeMonitor(fileName);
             }).catch(e => {
                 console.error(`L4再生エラー [${fileName}]:`, e);
                 resolve();
             });
 
-            this.mediaEl.onended = () => {
+            video.onended = () => {
                 this.stop();
             };
         });
@@ -431,7 +476,7 @@ class VideoPlayer {
     // 高精度フリーズフレーム監視ループ
     startFreezeMonitor(fileName) {
         this.stopFreezeMonitor();
-        if (this.isHiddenAudioOnly) return;
+        if (this.isHiddenAudioOnly || !this.mediaEl) return;
 
         const freezeTimes = window.freezeFramesPool ? (window.freezeFramesPool[fileName] || []) : [];
         if (freezeTimes.length === 0) return;
@@ -440,6 +485,7 @@ class VideoPlayer {
         this.triggeredFreezes = new Array(freezeTimes.length).fill(false);
 
         const checkFreeze = () => {
+            if (!this.mediaEl) return;
             if (this.mediaEl.paused || this.mediaEl.ended) {
                 // フリーズによる一時停止中でない場合は、再生再開を待つためにループのみ継続
                 if (!this.freezeTimeout) {
@@ -453,7 +499,7 @@ class VideoPlayer {
                 if (!this.triggeredFreezes[i]) {
                     const pt = this.freezeTimes[i];
                     
-                    // 指定フレームの前後0.05秒〜0.1秒の範囲で検知
+                    // 指定フレームの前後0.03秒〜0.1秒の範囲で検知
                     if (cf >= pt - 0.03 && cf <= pt + 0.1) {
                         this.triggeredFreezes[i] = true;
 
@@ -468,7 +514,7 @@ class VideoPlayer {
                             console.log(`[player] Freeze triggered at ${cf.toFixed(2)}s (target ${pt.toFixed(2)}s). Pausing for ${pauseSec.toFixed(2)}s (${pauseFrames} frames).`);
 
                             if (window.addDecisionLog) {
-                                const screenNum = this.mediaEl.id.split('-').pop();
+                                const screenNum = this.mediaEl.id.split('-')[1];
                                 window.addDecisionLog(`Screen ${screenNum}: Freeze frame triggered at ${cf.toFixed(2)}s (target ${pt.toFixed(2)}s). Pausing for ${pauseSec.toFixed(2)}s (${pauseFrames} frames).`, 'warning');
                             }
 
@@ -516,10 +562,6 @@ class VideoPlayer {
             clearTimeout(this.fadeTimeout);
             this.fadeTimeout = null;
         }
-        if (this.timeUpdateHandler) {
-            this.mediaEl.removeEventListener('timeupdate', this.timeUpdateHandler);
-            this.timeUpdateHandler = null;
-        }
         if (this.lockTimeout) {
             clearTimeout(this.lockTimeout);
             this.lockTimeout = null;
@@ -527,13 +569,18 @@ class VideoPlayer {
         
         this.stopFreezeMonitor();
         
-        this.mediaEl.pause();
-        this.isLocked = false;
-        
-        if (!this.isHiddenAudioOnly) {
-            this.mediaEl.src = "";
-            this.mediaEl.classList.remove("playing");
-            this.mediaEl.style.opacity = 0;
+        if (this.mediaEl) {
+            if (this.timeUpdateHandler) {
+                this.mediaEl.removeEventListener('timeupdate', this.timeUpdateHandler);
+                this.timeUpdateHandler = null;
+            }
+            this.mediaEl.pause();
+            if (!this.isHiddenAudioOnly) {
+                this.mediaEl.classList.remove("playing");
+                this.mediaEl.style.opacity = 0;
+            }
         }
+        
+        this.isLocked = false;
     }
 }

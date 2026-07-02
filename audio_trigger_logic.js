@@ -65,6 +65,9 @@ async function loadMetadata() {
             console.log("[demo] Local videos not found. Using Cloudflare R2.");
         }
 
+        // プリロード用の動画要素プールを初期化
+        players.forEach(p => p.initializePool(VIDEO_BASE_PATH));
+
         // Load videos metadata
         const resVideos = await fetch("logic_weights.json");
         videoMetadataPool = await resVideos.json();

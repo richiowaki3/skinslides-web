@@ -69,6 +69,9 @@ async function initSkinslides() {
             console.log("[logic] Local videos not found. Using Cloudflare R2.");
         }
 
+        // プリロード用の動画要素プールを初期化
+        players.forEach(p => p.initializePool(VIDEO_BASE_PATH));
+
         // 1. メタデータ (logic_weights.json) のロード
         const resWeights = await fetch('logic_weights.json');
         metadataPool = await resWeights.json();

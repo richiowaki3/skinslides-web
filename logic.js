@@ -331,6 +331,19 @@ async function runGlobalSequence() {
             });
         });
 
+        // タイムライン冒頭の黒画面を防ぐため、初期状態で全画面にLevel 1（静寂）動画をロード
+        const initialQuietEvent = {
+            id: "initial_quiet",
+            time_sec: 0,
+            type: "静寂",
+            strength: 0.1,
+            onomatopoeia: "しんしん"
+        };
+        let startChosen = new Set();
+        [1, 2, 3].forEach(screenNum => {
+            reactScreenWithVideo(screenNum, initialQuietEvent, startChosen);
+        });
+
         // 高精度再生監視ループ
         await new Promise((resolveTrackFinished) => {
             function updateLoop() {

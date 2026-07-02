@@ -61,6 +61,9 @@ async function loadMetadata() {
         // 動画の4レベル分類
         classifyVideos();
 
+        // フリーズフレーム情報のロード
+        await window.loadFreezeFrames();
+
         // Load audios metadata
         const resAudios = await fetch("Audio%20analysis%20data/sound_metadata.json");
         audioMetadataPool = await resAudios.json();

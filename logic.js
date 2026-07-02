@@ -39,6 +39,9 @@ async function initSkinslides() {
         audioMetadataPool = await resAudio.json();
         console.log(`[logic] Loaded ${audioMetadataPool.length} audio metadata records.`);
 
+        // 3.5 フリーズフレーム情報のロード
+        await window.loadFreezeFrames();
+
         // 4. グローバルシーケンスの開始
         runGlobalSequence();
     } catch (e) {

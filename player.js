@@ -45,6 +45,12 @@ window.loadFreezeFrames = async function() {
     }
 };
 
+window.videoFiles = [
+    "01.mov", "02.mov", "03.mov", "04.mov", "05.mov", "06.mov", "07.mov", "08.mov", 
+    "09.mov", "10.mov", "11.mov", "12.mov", "13.mov", "14.mov", "15.mov", "16.mov", 
+    "17.mov", "18.mov"
+];
+
 window.videoBlobCache = {}; // filename -> blob URL / direct URL fallback
 
 window.preloadAllVideos = async function(basePath, onProgress) {

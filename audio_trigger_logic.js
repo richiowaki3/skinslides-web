@@ -84,6 +84,27 @@ async function loadMetadata() {
         audioMetadataPool = await resAudios.json();
         console.log(`[demo] Loaded ${audioMetadataPool.length} audios metadata.`);
 
+        // ビデオのBlobプリロードを一括開始
+        const preloadStatus = document.getElementById("preload-status");
+        const preloadProgress = document.getElementById("preload-progress");
+        const playBtn = document.getElementById("play-btn");
+        
+        await window.preloadAllVideos(VIDEO_BASE_PATH, (loaded, total) => {
+            const pct = Math.round((loaded / total) * 100);
+            if (preloadProgress) preloadProgress.textContent = `${pct}% (${loaded}/${total})`;
+        });
+        
+        if (preloadStatus) {
+            preloadStatus.style.color = "var(--accent-green)";
+            preloadProgress.textContent = "Complete!";
+            setTimeout(() => {
+                preloadStatus.style.display = "none";
+                if (playBtn) playBtn.style.display = "block"; // 準備完了後に再生ボタンを表示！
+            }, 800);
+        } else {
+            if (playBtn) playBtn.style.display = "block";
+        }
+
         // Hook up Video Audio Toggle
         const audioToggleBtn = document.getElementById("toggle-video-audio");
         if (audioToggleBtn) {

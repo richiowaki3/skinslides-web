@@ -16,7 +16,7 @@ let flowDirection = 1; // 1: 左から右（Screen 1 -> 2 -> 3）, -1: 右から
 
 // アプリの初期化とデータロード
 async function initSkinslides() {
-    document.getElementById('start-overlay').style.display = 'none';
+    // start-overlayはプリロード完了後にユーザー操作で消去します
 
     players = [
         new VideoPlayer("player-1"),
@@ -88,8 +88,40 @@ async function initSkinslides() {
         // 3.5 フリーズフレーム情報のロード
         await window.loadFreezeFrames();
 
-        // 4. グローバルシーケンスの開始
-        runGlobalSequence();
+        // 4. ビデオのBlobプリロードを一括開始
+        const preloadStatus = document.getElementById("preload-status");
+        const preloadProgress = document.getElementById("preload-progress");
+        const startBtnEl = document.getElementById("start-btn-el");
+        
+        await window.preloadAllVideos(VIDEO_BASE_PATH, (loaded, total) => {
+            const pct = Math.round((loaded / total) * 100);
+            if (preloadProgress) preloadProgress.textContent = `${pct}% (${loaded}/${total})`;
+        });
+        
+        if (preloadStatus) {
+            preloadStatus.style.color = "#00ffaa";
+            preloadProgress.textContent = "Complete!";
+            setTimeout(() => {
+                preloadStatus.style.display = "none";
+                if (startBtnEl) {
+                    startBtnEl.style.display = "block";
+                    startBtnEl.addEventListener('click', () => {
+                        document.getElementById('start-overlay').style.display = 'none';
+                        // グローバルシーケンスの開始
+                        runGlobalSequence();
+                    }, { once: true });
+                }
+            }, 800);
+        } else {
+            if (startBtnEl) {
+                startBtnEl.style.display = "block";
+                startBtnEl.addEventListener('click', () => {
+                    document.getElementById('start-overlay').style.display = 'none';
+                    // グローバルシーケンスの開始
+                    runGlobalSequence();
+                }, { once: true });
+            }
+        }
     } catch (e) {
         console.error("JSONの読み込みまたは初期化に失敗しました:", e);
     }
@@ -619,4 +651,4 @@ function addDecisionLog(message, type = "info") {
 }
 window.addDecisionLog = addDecisionLog; // player.jsからも呼べるようにグローバル化
 
-document.getElementById('start-overlay').addEventListener('click', initSkinslides, { once: true });
+window.addEventListener('load', initSkinslides);

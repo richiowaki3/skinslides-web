@@ -541,7 +541,10 @@
                 <select id="track-select">
                     <option value="" disabled selected>Loading audio tracks...</option>
                 </select>
-                <button id="play-btn" class="btn-play">Play Sequence</button>
+                <button id="play-btn" class="btn-play" style="display: none;">Play Sequence</button>
+                <div id="preload-status" style="font-size: 11px; letter-spacing: 0.05em; color: #ff3366; margin-top: 8px; font-weight: bold; font-family: Helvetica, Arial, sans-serif; text-align: center;">
+                    Preloading videos: <span id="preload-progress">0%</span>
+                </div>
             </div>
 
             <div class="control-group">

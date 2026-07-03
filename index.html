@@ -52,25 +52,30 @@
             position: fixed;
             top: 0; left: 0;
             width: 100vw; height: 100vh;
-            background: rgba(0,0,0,0.85);
+            background: rgba(0,0,0,0.92); /* 少し暗めにして背景の可読性をアップ */
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
             z-index: 100;
-            cursor: pointer;
+            cursor: default; /* ボタンのみポインターにするためデフォルトに変更 */
             letter-spacing: 2px;
         }
         .title {
-            font-size: 2rem;
-            margin-bottom: 20px;
-            letter-spacing: 4px;
+            font-size: 2.2rem;
+            margin-bottom: 25px;
+            letter-spacing: 3px;
+            font-family: Helvetica, Arial, sans-serif;
+            font-weight: bold;
+            color: #ffffff;
         }
         .start-btn {
             padding: 15px 40px;
             border: 1px solid #fff;
             font-size: 1.2rem;
-            text-transform: uppercase;
+            font-family: Helvetica, Arial, sans-serif;
+            letter-spacing: 1px;
+            /* text-transform: uppercase を削除して指定の大文字小文字を維持 */
         }
         .start-btn:hover {
             background-color: #fff;
@@ -249,10 +254,21 @@
 </head>
 <body>
     <div id="start-overlay">
-        <div class="title">skinslides AI Logic</div>
-        <div class="start-btn" id="start-btn-el" style="display: none; cursor: pointer;">Click to Start Sequence</div>
+        <div class="title">skinslides:Motion Logic Core</div>
+        <div class="start-btn" id="start-btn-el" style="display: none; cursor: pointer;">[clickto start seQuence]</div>
         <div id="preload-status" style="font-size: 14px; letter-spacing: 0.05em; color: #ff3366; margin-top: 15px; font-weight: bold; font-family: Helvetica, Arial, sans-serif;">
             Preloading videos: <span id="preload-progress">0%</span>
+        </div>
+        
+        <div class="credits" style="margin-top: 45px; font-family: Helvetica, Arial, sans-serif; font-size: 11px; line-height: 1.7; color: #8892b0; text-align: center; font-weight: 300; letter-spacing: 0.5px;">
+            Construction: Richi Owaki<br>
+            Performance: Alessio Silvestrin<br>
+            Sound: Otomo Yoshihide<br>
+            Original Programming: Satoshi Hama (YCAM InterLab)<br>
+            Technical Support (2009): YCAM InterLab<br>
+            <br>
+            2026 Web Reconstruction<br>
+            System Re-engineering & AI Logic: Richi Owaki, AI Agent
         </div>
     </div>
 

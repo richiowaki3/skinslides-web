@@ -3,6 +3,59 @@
 <head>
     <meta charset="UTF-8">
     <title>skinslides - Ambient Video Player</title>
+    <script>
+        // Global error logger for remote debugging
+        window.onerror = function(message, source, lineno, colno, error) {
+            const overlay = document.getElementById("start-overlay");
+            if (overlay) {
+                let errDiv = document.getElementById("debug-error-log");
+                if (!errDiv) {
+                    errDiv = document.createElement("div");
+                    errDiv.id = "debug-error-log";
+                    errDiv.style.color = "#ff3366";
+                    errDiv.style.background = "rgba(255,0,0,0.1)";
+                    errDiv.style.border = "1px solid #ff3366";
+                    errDiv.style.padding = "10px";
+                    errDiv.style.marginTop = "20px";
+                    errDiv.style.fontSize = "12px";
+                    errDiv.style.fontFamily = "monospace";
+                    errDiv.style.textAlign = "left";
+                    errDiv.style.maxWidth = "80%";
+                    errDiv.style.wordBreak = "break-all";
+                    overlay.appendChild(errDiv);
+                }
+                errDiv.innerHTML += `<div><strong>Error:</strong> ${message} <br><strong>At:</strong> ${source}:${lineno}:${colno}</div>`;
+            }
+            return false;
+        };
+        
+        window.addEventListener('unhandledrejection', function(event) {
+            const reason = event.reason;
+            const message = reason instanceof Error ? reason.message : reason;
+            const stack = reason instanceof Error ? reason.stack : '';
+            
+            const overlay = document.getElementById("start-overlay");
+            if (overlay) {
+                let errDiv = document.getElementById("debug-error-log");
+                if (!errDiv) {
+                    errDiv = document.createElement("div");
+                    errDiv.id = "debug-error-log";
+                    errDiv.style.color = "#ff3366";
+                    errDiv.style.background = "rgba(255,0,0,0.1)";
+                    errDiv.style.border = "1px solid #ff3366";
+                    errDiv.style.padding = "10px";
+                    errDiv.style.marginTop = "20px";
+                    errDiv.style.fontSize = "12px";
+                    errDiv.style.fontFamily = "monospace";
+                    errDiv.style.textAlign = "left";
+                    errDiv.style.maxWidth = "80%";
+                    errDiv.style.wordBreak = "break-all";
+                    overlay.appendChild(errDiv);
+                }
+                errDiv.innerHTML += `<div><strong>Unhandled Promise Rejection:</strong> ${message} <br><pre style="margin:5px 0 0 0; font-size:10px; color:#888;">${stack}</pre></div>`;
+            }
+        });
+    </script>
     <style>
         body {
             margin: 0;

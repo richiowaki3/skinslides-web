@@ -143,13 +143,24 @@ async function loadMetadata() {
     }
 }
 
+const ALLOWED_TRACKS_SET = new Set([
+    "scene2end00", "scene2end01", "scene2end02",
+    "t507", "t508", "t509", "t510", "t512", "t513", "t514", "t515", "t516", "t517", 
+    "t518", "t519", "t520", "t521", "t522", "t523", "t524", "t530", "t532", "t533", 
+    "t534", "t535", "t536", "t537", "t541", "t538", "t538_00", "t538_0", "t538_01", 
+    "t538_1", "t538_02", "t538_2"
+]);
+
 function populateTrackSelect() {
     if (!trackSelect) return;
     trackSelect.innerHTML = '<option value="" disabled selected>Select an audio track...</option>';
     
-    // Filter to include only scene2End tracks
+    // 許可された音響トラックのみをフィルタリング
     const sortedAudios = [...audioMetadataPool]
-        .filter(track => track.file_id.includes("scene2End"))
+        .filter(track => {
+            const baseId = track.file_id.replace(/\.(aif|aiff|mp3)$/i, '').toLowerCase();
+            return ALLOWED_TRACKS_SET.has(baseId);
+        })
         .sort((a, b) => b.profile.amount.dynamism_score - a.profile.amount.dynamism_score);
 
     sortedAudios.forEach(track => {

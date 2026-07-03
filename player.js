@@ -135,6 +135,7 @@ class VideoPlayer {
         this.audioCtx = null;
         this.source = null;
         this.gainNode = null;
+        this.pannerNode = null;
         this.useWebAudio = !isHiddenAudioOnly; // 動画プレイヤーはWeb Audioを使用（エラー時はfalseへ）
     }
 
@@ -190,6 +191,7 @@ class VideoPlayer {
         this.audioCtx = null;
         this.source = null;
         this.gainNode = null;
+        this.pannerNode = null;
 
         // 再ロード
         const currentSrc = oldEl.src;
@@ -222,8 +224,25 @@ class VideoPlayer {
             this.source = this.audioCtx.createMediaElementSource(this.mediaEl);
             this.gainNode = this.audioCtx.createGain();
 
-            this.source.connect(this.gainNode);
-            this.gainNode.connect(this.audioCtx.destination);
+            // 左右の映像用スピーカーに対する音の定位設定（パンニング）
+            if (this.audioCtx.createStereoPanner) {
+                this.pannerNode = this.audioCtx.createStereoPanner();
+                let panVal = 0.0;
+                if (this.elementId.includes("1")) {
+                    panVal = -0.85; // 左側の画面は左スピーカー寄り
+                } else if (this.elementId.includes("3")) {
+                    panVal = 0.85;  // 右側の画面は右スピーカー寄り
+                }
+                this.pannerNode.pan.setValueAtTime(panVal, this.audioCtx.currentTime);
+
+                this.source.connect(this.gainNode);
+                this.gainNode.connect(this.pannerNode);
+                this.pannerNode.connect(this.audioCtx.destination);
+                console.log(`[player] Stereo Panner initialized for ${this.mediaEl.id} with pan ${panVal}`);
+            } else {
+                this.source.connect(this.gainNode);
+                this.gainNode.connect(this.audioCtx.destination);
+            }
 
             // グローバル音量ゲインを適用
             const currentGain = window.videoGainVolume !== undefined ? window.videoGainVolume : 1.0;

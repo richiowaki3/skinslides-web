@@ -322,16 +322,27 @@ function reactScreenWithVideo(screenNum, event, chosenInTrigger) {
     }
 }
 
+// プレイリストのトラック定義
+const NORMAL_TRACKS = [
+    "scene2End00.mp3", "scene2End01.mp3", "scene2End02.mp3",
+    "T507.mp3", "T508.mp3", "T509.mp3", "T510.mp3", "T512.mp3", 
+    "T513.mp3", "T514.mp3", "T515.mp3", "T516.mp3", "T517.mp3", 
+    "T518.mp3", "T519.mp3", "T520.mp3", "T521.mp3", "T522.mp3", 
+    "T523.mp3", "T524.mp3", "T530.mp3", "T532.mp3", "T533.mp3", 
+    "T534.mp3", "T535.mp3", "T536.mp3", "T537.mp3", "T541.mp3"
+];
+
+const RARE_TRACKS = [
+    "T538.mp3", "T538_00.mp3", "T538_0.mp3", "T538_01.mp3", 
+    "T538_1.mp3", "T538_02.mp3", "T538_2.mp3"
+];
+
+let lastTrackFileName = null;
+let lastWasRare = false;
+
 // 音声トリガー駆動のグローバルループ
 async function runGlobalSequence() {
     console.log("[logic] Trigger-driven sequence started.");
-
-    // scene2End00, scene2End01, scene2End02 のみを使用する
-    const scene2EndTracks = audioMetadataPool.filter(t => t.file_id.includes("scene2End"));
-    if (scene2EndTracks.length === 0) {
-        console.error("[logic] No scene2End tracks found in metadata pool!");
-        return;
-    }
 
     const audioEl = document.getElementById("player-4");
     if (!audioEl) {
@@ -342,11 +353,46 @@ async function runGlobalSequence() {
     while (true) {
         cycleCount++;
         
-        // 3つのファイルをランダムで選択
-        const selectedTrack = scene2EndTracks[Math.floor(Math.random() * scene2EndTracks.length)];
-        const audioFileName = selectedTrack.file_id.replace(/\.(aif|aiff)$/i, '.mp3');
+        let audioFileName = "";
+        let selectedTrack = null;
         
-        console.log(`\n--- [Cycle ${cycleCount}] Playing: ${audioFileName} ---`);
+        // 適切なトラック選択ループ
+        let attempts = 0;
+        while (attempts < 100) {
+            attempts++;
+            // 稀に出るトラック（RARE_TRACKS）の抽選条件：前回が稀でなく、かつ10%の確率
+            const useRare = !lastWasRare && (Math.random() < 0.10);
+            const pool = useRare ? RARE_TRACKS : NORMAL_TRACKS;
+            
+            const candidateName = pool[Math.floor(Math.random() * pool.length)];
+            
+            // 前回と同じ曲は連続使用しない
+            if (candidateName !== lastTrackFileName) {
+                // sound_metadata.json から該当ファイルを探す (.mp4/.mp3 の拡張子揺れや .aif 揺れに対応)
+                selectedTrack = audioMetadataPool.find(t => {
+                    const normFileId = t.file_id.replace(/\.(aif|aiff|mp3)$/i, '').toLowerCase();
+                    const normCandName = candidateName.replace(/\.mp3$/i, '').toLowerCase();
+                    return normFileId === normCandName;
+                });
+                
+                if (selectedTrack) {
+                    audioFileName = candidateName;
+                    lastWasRare = useRare;
+                    break;
+                }
+            }
+        }
+        
+        // フォールバック（万が一見つからなかった場合はデフォルトでscene2End00を再生）
+        if (!selectedTrack) {
+            audioFileName = "scene2End00.mp3";
+            selectedTrack = audioMetadataPool.find(t => t.file_id.includes("scene2End00"));
+            lastWasRare = false;
+        }
+        
+        lastTrackFileName = audioFileName;
+        
+        console.log(`\n--- [Cycle ${cycleCount}] Playing: ${audioFileName} (Rare: ${lastWasRare}) ---`);
         
         // トラック名表示を更新
         const trackNameEl = document.getElementById("ana-track-name");
@@ -462,8 +508,8 @@ async function runGlobalSequence() {
         console.log(`--- [Cycle ${cycleCount}] Track finished ---`);
         addDecisionLog(`--- Track Finished ---`, "success");
         
-        // サイクル間に短いブレイクを挟む
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // 曲の終了後に次の曲まで3秒待機する
+        await new Promise(resolve => setTimeout(resolve, 3000));
     }
 }
 

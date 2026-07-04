@@ -582,6 +582,56 @@
             background-color: #fff;
             color: #000;
         }
+        /* Playback fullscreen clean aesthetic for Art Appreciation */
+        body.is-playing header {
+            display: none !important;
+        }
+        body.is-playing .dashboard {
+            display: none !important;
+        }
+        body.is-playing .analysis-dashboard {
+            display: none !important;
+        }
+        body.is-playing .main-container {
+            padding: 0 !important;
+            margin: 0 !important;
+            height: 100vh !important;
+            width: 100vw !important;
+            max-width: 100% !important;
+            display: flex !important;
+            justify-content: center !important;
+            align-items: center !important;
+            background-color: #000000 !important;
+        }
+        body.is-playing .display-area {
+            width: 100% !important;
+            height: 100% !important;
+            display: flex !important;
+            justify-content: center !important;
+            align-items: center !important;
+        }
+        body.is-playing .screen-container {
+            width: 100% !important;
+            max-width: 2060px !important;
+            justify-content: center !important;
+            margin: auto !important;
+            gap: 100px !important;
+        }
+        body.is-playing .screen-wrapper {
+            width: 25vw !important;
+            height: 44.4vw !important;
+            max-width: 320px !important;
+            max-height: 568px !important;
+        }
+        body.is-playing .collage-wrapper {
+            display: block !important;
+            width: 90vmin !important;
+            height: 90vmin !important;
+            max-width: 2060px !important;
+            max-height: 2060px !important;
+            margin: auto !important;
+            border: none !important;
+        }
     </style>
 </head>
 <body>

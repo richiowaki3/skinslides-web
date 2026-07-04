@@ -180,7 +180,7 @@ async function loadMetadata() {
                     }
                     if (playBtn) playBtn.style.display = "block";
                     if (cutupBtn) cutupBtn.style.display = "block";
-                    startSequence();
+                    playSequence();
                 });
             }
             if (planBBtn) {
@@ -464,6 +464,9 @@ function initAudioContext() {
 function playSequence() {
     if (!audioElement) return;
     
+    // Fullscreen clean aesthetic for Art Appreciation
+    document.body.classList.add("is-playing");
+    
     if (isCutUpPlaying) {
         stopCutUpPlayback();
     }
@@ -521,6 +524,7 @@ function stopSequence() {
         audioElement.currentTime = 0;
     }
     isPlaying = false;
+    document.body.classList.remove("is-playing");
     if (playButton) {
         playButton.textContent = "Play Sequence";
         playButton.style.background = "linear-gradient(135deg, #0088ff 0%, #00bfff 100%)";
@@ -600,6 +604,7 @@ function startCutUpPlayback() {
     }
     
     isCutUpPlaying = true;
+    document.body.classList.add("is-playing");
     if (cutupButton) {
         cutupButton.textContent = "Stop Cut-up Test";
         cutupButton.style.background = "linear-gradient(135deg, #ff3366 0%, #ff0055 100%)";
@@ -640,6 +645,7 @@ function startCutUpPlayback() {
 
 function stopCutUpPlayback() {
     isCutUpPlaying = false;
+    document.body.classList.remove("is-playing");
     if (cutupButton) {
         cutupButton.textContent = "Start Audio Cut-up Test";
         cutupButton.style.background = "linear-gradient(135deg, #ff7700 0%, #ff8800 100%)";
@@ -1845,3 +1851,23 @@ function clearCollageVideos() {
     collageVideos = [];
     collageZIndex = 1;
 }
+
+
+// Click anywhere on body to stop playback (Art Appreciation escape)
+document.addEventListener("click", (e) => {
+    if (document.body.classList.contains("is-playing")) {
+        const overlay = document.getElementById("start-overlay");
+        if (overlay && overlay.style.display !== "none") return;
+        
+        if (isPlaying) stopSequence();
+        if (isCutUpPlaying) stopCutUpPlayback();
+    }
+});
+
+// Escape key to stop playback
+document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && document.body.classList.contains("is-playing")) {
+        if (isPlaying) stopSequence();
+        if (isCutUpPlaying) stopCutUpPlayback();
+    }
+});

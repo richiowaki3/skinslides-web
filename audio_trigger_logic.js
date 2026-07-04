@@ -497,6 +497,14 @@ function stopSequence() {
     });
 }
 
+const activeAgentDisplay = document.getElementById("active-agent");
+
+let duetState = {
+    activeAgent: "AgentB", // Start with Agent B (Ambient)
+    turnTimeElapsed: 0,
+    turnMaxDuration: 25000
+};
+
 let isCutUpPlaying = false;
 let cutUpNode = null;
 let cutUpTimer = null;
@@ -517,6 +525,10 @@ function startCutUpPlayback() {
         cutupButton.style.background = "linear-gradient(135deg, #ff3366 0%, #ff0055 100%)";
         cutupButton.style.boxShadow = "0 4px 15px rgba(255, 0, 85, 0.3)";
     }
+    
+    duetState.activeAgent = "AgentB";
+    duetState.turnTimeElapsed = 0;
+    duetState.turnMaxDuration = 20000 + Math.random() * 15000; // 20s to 35s
     
     logMessage("CONTROL", "Audio Cut-up Test started");
     
@@ -543,6 +555,11 @@ function stopCutUpPlayback() {
         cutupButton.textContent = "Start Audio Cut-up Test";
         cutupButton.style.background = "linear-gradient(135deg, #ff7700 0%, #ff8800 100%)";
         cutupButton.style.boxShadow = "0 4px 15px rgba(255, 119, 0, 0.3)";
+    }
+    
+    if (activeAgentDisplay) {
+        activeAgentDisplay.textContent = "IDLE";
+        activeAgentDisplay.style.color = "var(--text-muted)";
     }
     
     // Clear idle timer
@@ -602,40 +619,57 @@ function playNextCutUpSlice() {
         return normFileId === normRandFile;
     });
     
-    if (!trackData || !trackData.triggers.events || trackData.triggers.events.length === 0) {
-        // Fallback if no triggers found
-        cutUpDuration = 1.5 + Math.random() * 2.0;
-        cutUpStartTime = Math.random() * (audioBuffer.duration - cutUpDuration);
-        cutUpEvents = [];
-    } else {
-        // Pick random trigger event
-        const events = trackData.triggers.events;
-        const randomEvent = events[Math.floor(Math.random() * events.length)];
-        const eventTime = randomEvent.time_sec;
-        
-        // Decide duration based on type
-        if (randomEvent.type === "アタック") {
-            cutUpDuration = 0.8 + Math.random() * 0.7; // 0.8s - 1.5s
-        } else if (randomEvent.type === "うねり") {
-            cutUpDuration = 2.0 + Math.random() * 2.0; // 2.0s - 4.0s
+    // Update active agent UI display
+    if (activeAgentDisplay) {
+        if (duetState.activeAgent === "AgentA") {
+            activeAgentDisplay.textContent = "AGENT A (Slicer / Left)";
+            activeAgentDisplay.style.color = "#ff3366";
         } else {
-            cutUpDuration = 3.0 + Math.random() * 3.0; // 3.0s - 6.0s
+            activeAgentDisplay.textContent = "AGENT B (Ambient / Right)";
+            activeAgentDisplay.style.color = "#00ffaa";
+        }
+    }
+    
+    let targetDuration = 1.5;
+    let targetStartTime = 0.0;
+    let events = [];
+    
+    if (!trackData || !trackData.triggers.events || trackData.triggers.events.length === 0) {
+        if (duetState.activeAgent === "AgentA") {
+            targetDuration = 0.4 + Math.random() * 1.4;
+        } else {
+            targetDuration = 12.0 + Math.random() * 18.0;
+        }
+        targetStartTime = Math.random() * Math.max(0.1, audioBuffer.duration - targetDuration);
+    } else {
+        const eventsPool = trackData.triggers.events;
+        let chosenEvent = null;
+        
+        if (duetState.activeAgent === "AgentA") {
+            // Agent A prefers "アタック"
+            const attacks = eventsPool.filter(e => e.type === "アタック");
+            chosenEvent = attacks.length > 0 ? attacks[Math.floor(Math.random() * attacks.length)] : eventsPool[Math.floor(Math.random() * eventsPool.length)];
+            targetDuration = 0.4 + Math.random() * 1.4;
+            targetStartTime = Math.max(0, chosenEvent.time_sec - 0.1 - Math.random() * 0.2);
+        } else {
+            // Agent B prefers "うねり" or "静寂"
+            const ambients = eventsPool.filter(e => e.type === "うねり" || e.type === "静寂");
+            chosenEvent = ambients.length > 0 ? ambients[Math.floor(Math.random() * ambients.length)] : eventsPool[Math.floor(Math.random() * eventsPool.length)];
+            targetDuration = 12.0 + Math.random() * 18.0;
+            targetStartTime = Math.max(0, chosenEvent.time_sec - 1.0 - Math.random() * 2.0);
         }
         
-        // Start slightly before event
-        cutUpStartTime = Math.max(0, eventTime - 0.2 - Math.random() * 0.3);
-        
-        // Check bounds
-        if (cutUpStartTime + cutUpDuration > audioBuffer.duration) {
-            cutUpStartTime = Math.max(0, audioBuffer.duration - cutUpDuration);
+        // Bounds check
+        if (targetStartTime + targetDuration > audioBuffer.duration) {
+            targetStartTime = Math.max(0, audioBuffer.duration - targetDuration);
         }
         
-        // Extract events falling inside the slice
-        cutUpEvents = events
-            .filter(e => e.time_sec >= cutUpStartTime && e.time_sec <= (cutUpStartTime + cutUpDuration))
+        // Filter events
+        events = eventsPool
+            .filter(e => e.time_sec >= targetStartTime && e.time_sec <= (targetStartTime + targetDuration))
             .map((e, index) => ({
                 id: `cutup_event_${index}_${Date.now()}`,
-                time_sec: e.time_sec - cutUpStartTime, // relative to slice start
+                time_sec: e.time_sec - targetStartTime,
                 type: e.type,
                 strength: e.strength,
                 onomatopoeia: e.onomatopoeia,
@@ -643,7 +677,12 @@ function playNextCutUpSlice() {
             }));
     }
     
-    logMessage("CUT-UP", `Playing slice: ${randomFile} [${cutUpStartTime.toFixed(1)}s - ${(cutUpStartTime + cutUpDuration).toFixed(1)}s] (${cutUpDuration.toFixed(1)}s)`);
+    cutUpStartTime = targetStartTime;
+    cutUpDuration = targetDuration;
+    cutUpEvents = events;
+    
+    const agentLabel = duetState.activeAgent === "AgentA" ? "AGENT A (Slicer)" : "AGENT B (Ambient)";
+    logMessage("CUT-UP", `[${agentLabel}] Playing slice: ${randomFile} [${cutUpStartTime.toFixed(1)}s - ${(cutUpStartTime + cutUpDuration).toFixed(1)}s] (${cutUpDuration.toFixed(1)}s)`);
     
     // Play buffer slice
     if (audioCtx.state === 'suspended') {
@@ -661,8 +700,23 @@ function playNextCutUpSlice() {
     sliceGain.gain.setValueAtTime(1.0, now + cutUpDuration - 0.02);
     sliceGain.gain.linearRampToValueAtTime(0, now + cutUpDuration); // 20ms fade-out
     
-    cutUpNode.connect(sliceGain);
-    sliceGain.connect(analyser);
+    // Create stereo panner to spatialise Agent A (Left) and Agent B (Right)
+    const panner = audioCtx.createStereoPanner ? audioCtx.createStereoPanner() : null;
+    if (panner) {
+        let panVal = 0.0;
+        if (duetState.activeAgent === "AgentA") {
+            panVal = -0.5 - Math.random() * 0.3; // -0.8 to -0.5
+        } else {
+            panVal = 0.5 + Math.random() * 0.3; // 0.5 to 0.8
+        }
+        panner.pan.setValueAtTime(panVal, now);
+        cutUpNode.connect(sliceGain);
+        sliceGain.connect(panner);
+        panner.connect(analyser);
+    } else {
+        cutUpNode.connect(sliceGain);
+        sliceGain.connect(analyser);
+    }
     
     // Set global variables for timeline rendering
     window.cutUpPlaybackStartTime = Date.now();
@@ -677,7 +731,7 @@ function playNextCutUpSlice() {
             event.triggered = true;
             
             // Log trigger
-            logMessage("TRIGGER", `[CUT-UP] ${event.onomatopoeia} (Type: ${event.type}, Strength: ${event.strength.toFixed(2)})`);
+            logMessage("TRIGGER", `[CUT-UP - ${duetState.activeAgent}] ${event.onomatopoeia} (Type: ${event.type}, Strength: ${event.strength.toFixed(2)})`);
             
             // Map strength to level
             let audioLevel = 1;
@@ -702,6 +756,20 @@ function playNextCutUpSlice() {
         
         cutUpVideoTimeouts.push(timeoutId);
     });
+    
+    // Duet State Turn Swapping Logic
+    duetState.turnTimeElapsed += cutUpDuration * 1000;
+    if (duetState.turnTimeElapsed >= duetState.turnMaxDuration) {
+        if (duetState.activeAgent === "AgentB") {
+            duetState.activeAgent = "AgentA";
+            duetState.turnMaxDuration = 8000 + Math.random() * 7000; // Agent A (Slicer) plays for 8s to 15s
+        } else {
+            duetState.activeAgent = "AgentB";
+            duetState.turnMaxDuration = 20000 + Math.random() * 15000; // Agent B (Ambient) plays for 20s to 35s
+        }
+        duetState.turnTimeElapsed = 0;
+        logMessage("DUET", `Turn passed to ${duetState.activeAgent.toUpperCase()}!`);
+    }
     
     // Schedule next slice
     cutUpTimer = setTimeout(() => {

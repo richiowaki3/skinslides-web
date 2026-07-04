@@ -507,17 +507,19 @@
             color: #fff;
         }
         .scroll-log {
-            height: 110px; /* 縦幅スリム化 */
+            height: 140px; /* 縦幅に余裕を持たせる */
             overflow-y: auto;
             font-family: Monaco, Menlo, Consolas, monospace;
-            font-size: 9px;
             display: flex;
             flex-direction: column;
-            gap: 3px;
+            gap: 2px;
         }
         .log-line {
-            border-bottom: 1px solid #111;
-            padding-bottom: 2px;
+            border-bottom: 1px solid #1a1a1a;
+            padding: 4px 6px;
+            font-size: 11px;
+            line-height: 1.5;
+            letter-spacing: 0.05em;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;

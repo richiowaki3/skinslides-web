@@ -2,10 +2,25 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>skinslides - Audio Trigger Demo & Monitor</title>
+    <title>skinslides</title>
     <!-- Import Google Fonts -->
     
     <style>
+        * {
+            outline: none !important;
+            -webkit-tap-highlight-color: transparent !important;
+        }
+
+        #timeline-canvas-a, #timeline-canvas-b {
+            display: block !important;
+            width: 100% !important;
+            height: 60px !important;
+            background: #020202 !important;
+            border-radius: 0px !important;
+            border: 1px solid #222222 !important;
+            box-sizing: border-box !important;
+        }
+
         :root {
             --bg-color: #000000;
             --card-bg: #050505;
@@ -30,222 +45,62 @@
             overflow-x: hidden;
         }
 
+        /* Completely hide the header and sidebar controls globally */
         header {
-            width: 100%;
-            max-width: 1200px;
-            padding: 20px;
-            box-sizing: border-box;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid var(--border-color);
+            display: none !important;
         }
-
-        .brand {
-            font-weight: 800;
-            font-size: 1.5rem;
-            letter-spacing: 2px;
-            background: linear-gradient(45deg, var(--accent-blue), var(--accent-green));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        .badge {
-            background: rgba(0, 255, 170, 0.1);
-            border: 1px solid var(--accent-green);
-            color: var(--accent-green);
-            padding: 4px 10px;
-            border-radius: 20px;
-            font-size: 0.8rem;
-            font-weight: 600;
-            letter-spacing: 1px;
-        }
-
-        .main-container {
-            width: 100%;
-            max-width: 1200px;
-            padding: 20px;
-            box-sizing: border-box;
-            display: grid;
-            grid-template-columns: 350px 1fr;
-            gap: 30px;
-            flex: 1;
-        }
-
-        /* 左側のモニタリングダッシュボード */
         .dashboard {
-            background: #050505;
-            border: 1px solid #222;
-            border-radius: 0px;
-            padding: 24px;
-            display: flex;
-            flex-direction: column;
-            gap: 100px;
-            height: fit-content;
-            box-shadow: none;
+            display: none !important;
         }
 
-        .section-title {
-            font-size: 1rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            color: var(--text-muted);
-            margin: 0 0 10px 0;
-            border-left: 3px solid var(--accent-blue);
-            padding-left: 10px;
+        /* Layout Container */
+        .main-container {
+            display: block !important;
+            width: 100% !important;
+            height: auto !important;
+            background-color: #000000 !important;
+            margin: 0 !important;
+            padding: 0 !important;
         }
 
-        .control-group {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-
-        select, button {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid var(--border-color);
-            color: var(--text-color);
-            padding: 12px;
-            border-radius: 0px;
-            font-size: 0.95rem;
-            font-family: inherit;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-
-        select:focus, select:hover {
-            border-color: var(--accent-blue);
-            outline: none;
-            background: rgba(255, 255, 255, 0.1);
-        }
-
-        .btn-play {
-            background: linear-gradient(135deg, #0088ff 0%, #00bfff 100%);
-            border: none;
-            font-weight: 600;
-            letter-spacing: 1px;
-            box-shadow: 0 4px 15px rgba(0, 191, 255, 0.3);
-        }
-
-        .btn-play:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(0, 191, 255, 0.5);
-        }
-
-        .btn-play:active {
-            transform: translateY(0);
-        }
-
-        /* 再生モニター表示 */
-        .status-display {
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: 8px;
-            padding: 16px;
-            border: 1px solid rgba(255, 255, 255, 0.03);
-        }
-
-        .status-row {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 8px;
-            font-size: 0.9rem;
-        }
-
-        .status-row:last-child {
-            margin-bottom: 0;
-        }
-
-        .status-label {
-            color: var(--text-muted);
-        }
-
-        .status-value {
-            font-weight: 600;
-            color: var(--text-color);
-        }
-
-        .status-value.accent {
-            color: var(--accent-green);
-        }
-
-        /* タイムラインモニター */
-        .log-panel {
-            background: rgba(0, 0, 0, 0.3);
-            border-radius: 8px;
-            height: 250px;
-            overflow-y: auto;
-            padding: 12px;
-            border: 1px solid rgba(255, 255, 255, 0.02);
-            font-family: monospace;
-            font-size: 0.8rem;
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-            scroll-behavior: smooth;
-        }
-
-        .log-entry {
-            display: flex;
-            gap: 10px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.02);
-            padding-bottom: 4px;
-        }
-
-        .log-time {
-            color: var(--accent-blue);
-            min-width: 50px;
-        }
-
-        .log-type {
-            font-weight: bold;
-        }
-
-        .log-type.attack { color: var(--accent-orange); }
-        .log-type.swell { color: var(--accent-blue); }
-        .log-type.roll { color: var(--accent-green); }
-
-        .log-msg {
-            color: #ccc;
-        }
-
-        /* 右側のメインスクリーンエリア */
+        /* Display area occupying the full performance canvas (2060px height) */
         .display-area {
-            display: flex;
-            flex-direction: column;
-            gap: 100px;
+            width: 100% !important;
+            height: 2060px !important;
+            display: block !important;
+            background-color: #000000 !important;
+            position: relative !important;
         }
 
+        /* Plan A screen container */
         .screen-container {
-            display: flex;
-            justify-content: space-between;
-            gap: 100px;
-            width: 100%;
+            width: 100% !important;
+            height: 1240px !important;
+            display: flex !important;
+            justify-content: center !important;
+            align-items: flex-start !important;
+            margin: 0 !important;
+            padding-top: 410px !important; /* 410px blank space at top */
+            box-sizing: border-box !important;
+            gap: 100px !important;
         }
 
+        /* Plan A screen wrapper: 640x1240px */
         .screen-wrapper {
-            position: relative;
-            width: 250px;
-            height: 443px; /* 9:16 ratio */
-            border-radius: 12px;
-            overflow: hidden;
-            background-color: #000;
-            border: none;
-            box-shadow: none;
-            transition: all 0.3s ease;
-        }
-
-        .screen-wrapper.active {
-            border: none;
-            box-shadow: none;
+            position: relative !important;
+            width: 640px !important;
+            height: 1240px !important;
+            background-color: #000000 !important;
+            overflow: hidden !important;
+            border: none !important;
         }
 
         .screen {
             position: absolute;
             top: 50%;
             left: 50%;
-            width: 443px; /* wrapperの高さに合わせる */
-            height: 250px; /* wrapperの幅に合わせる */
+            width: 1240px; /* Match height for 90deg rotation */
+            height: 640px; /* Match width for 90deg rotation */
             transform: translate(-50%, -50%) rotate(90deg);
             object-fit: cover;
             opacity: 0;
@@ -256,100 +111,26 @@
             opacity: 1;
         }
 
+        /* Hide labels and onomatopoeia completely */
         .screen-label {
             display: none !important;
         }
-
-        /* オノマトペポップアップオーバーレイ */
         .onomatopoeia-overlay {
             display: none !important;
         }
 
-        .ono-text {
-            color: #ffffff;
-            font-family: 'Noto Sans JP', sans-serif;
-            font-weight: 800;
-            font-size: 2.2rem;
-            white-space: nowrap;
-            letter-spacing: 2px;
-            text-shadow: 
-                0 0 10px rgba(255, 255, 255, 0.9), 
-                0 0 20px var(--accent-green), 
-                0 0 30px var(--accent-green);
-            opacity: 0;
-            transform: scale(0.3) rotate(-5deg);
-            transition: all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-        }
-
-        .ono-text.show {
-            opacity: 1;
-            transform: scale(1.0) rotate(5deg);
-        }
-
-        /* 特有のオノマトペスタイル */
-        .ono-text.attack {
-            text-shadow: 
-                0 0 10px #fff,
-                0 0 20px var(--accent-orange),
-                0 0 30px var(--accent-orange);
-            color: #fff;
-        }
-
-        .ono-text.swell {
-            text-shadow: 
-                0 0 10px #fff,
-                0 0 20px var(--accent-blue),
-                0 0 30px var(--accent-blue);
-            color: #fff;
-        }
-
-        .ono-text.roll {
-            text-shadow: 
-                0 0 10px #fff,
-                0 0 20px var(--accent-green),
-                0 0 30px var(--accent-green);
-            color: #fff;
-        }
-
-        /* 再生バー */
-        .progress-container {
-            width: 100%;
-            height: 6px;
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 3px;
-            position: relative;
-            overflow: hidden;
-            margin-top: 10px;
-        }
-
-        .progress-bar {
-            width: 0%;
-            height: 100%;
-            background: linear-gradient(90deg, var(--accent-blue), var(--accent-green));
-            border-radius: 3px;
-            transition: width 0.1s linear;
-        }
-
-        /* HTML5オーディオは不可視に配置 */
-        #audio-element {
-            display: none;
-        }
-
-        /* Duet Collage Single Frame Container (Pattern B Test) */
+        /* Plan B collage wrapper: 2060x2060px */
         .collage-wrapper {
-            display: none; /* Hidden by default */
-            position: relative;
-            width: 100%;
-            overflow: hidden;
-            background-color: #000;
-            border: 1px solid #222;
-            box-sizing: border-box;
+            display: none;
+            width: 2060px !important;
+            height: 2060px !important;
+            max-width: 2060px !important;
+            max-height: 2060px !important;
+            margin: auto !important;
+            border: none !important;
+            position: relative !important;
         }
-        .collage-wrapper::after {
-            content: "";
-            display: block;
-            padding-top: 100%; /* 1:1 Aspect Ratio Square */
-        }
+
         #duet-collage-container {
             position: absolute;
             top: 0;
@@ -357,7 +138,7 @@
             width: 2060px;
             height: 2060px;
             transform-origin: top left;
-            background-color: #050505;
+            background-color: #000000;
             overflow: hidden;
             box-sizing: border-box;
         }
@@ -365,18 +146,20 @@
         /* Analysis Dashboard Styles - Swiss Design / Helvetica / Sharp */
         .analysis-dashboard {
             width: 100%;
-            max-width: 1200px;
+            max-width: 2060px; /* Aligned with screens & collage */
             margin: 40px auto 60px auto;
             padding: 12px 16px;
-            background: #000; /* 完全な黒 */
-            border: 1px solid #333; /* 鋭い境界線 */
-            border-radius: 0px; /* 角丸なし */
+            background: #000000;
+            border: 1px solid #333333;
+            border-radius: 0px;
             box-sizing: border-box;
             color: var(--text-color);
             font-family: "Helvetica Neue", Helvetica, Arial, "Hiragino Kaku Gothic ProN", sans-serif;
             font-size: 11px;
             letter-spacing: 0.5px;
+            display: block !important;
         }
+
         .dashboard-title-area {
             display: flex;
             justify-content: space-between;
@@ -385,37 +168,42 @@
             padding-bottom: 6px;
             margin-bottom: 12px;
         }
+
         .dashboard-title {
             margin: 0;
             font-size: 12px;
             font-weight: 700;
             letter-spacing: 1px;
             text-transform: uppercase;
-            color: #fff;
+            color: #ffffff;
         }
+
         .audio-toggle-btn {
-            background: #111;
+            background: #111111;
             border: 1px solid var(--border-color);
-            color: #fff;
+            color: #ffffff;
             padding: 4px 8px;
-            border-radius: 0px; /* 角丸なし */
+            border-radius: 0px;
             font-family: inherit;
             font-size: 10px;
             cursor: pointer;
             text-transform: uppercase;
             transition: all 0.1s ease;
         }
+
         .audio-toggle-btn:hover {
-            background: #222;
+            background: #222222;
             border-color: var(--accent-green);
         }
+
         .timeline-section {
             background: #050505;
-            border-radius: 0px; /* 角丸なし */
+            border-radius: 0px;
             padding: 10px;
             margin-bottom: 16px;
-            border: 1px solid #222;
+            border: 1px solid #222222;
         }
+
         .timeline-header {
             display: flex;
             justify-content: space-between;
@@ -424,18 +212,12 @@
             color: var(--text-muted);
             font-weight: 600;
         }
+
         .timeline-canvas-wrapper {
             position: relative;
             width: 100%;
         }
-        #timeline-canvas {
-            display: block;
-            width: 100%;
-            height: 60px; /* 縦幅をスリムに */
-            background: #020202;
-            border-radius: 0px; /* 角丸なし */
-            border: 1px solid #222;
-        }
+
         .timeline-legend {
             display: flex;
             gap: 15px;
@@ -445,44 +227,51 @@
             justify-content: center;
             text-transform: uppercase;
         }
+
         .legend-item {
             display: flex;
             align-items: center;
             gap: 4px;
         }
+
         .legend-color {
             display: inline-block;
             width: 8px;
             height: 8px;
-            border-radius: 0px; /* 角丸なし */
+            border-radius: 0px;
         }
+
         .legend-color.attack { background: var(--accent-orange); }
         .legend-color.swell { background: var(--accent-blue); }
         .legend-color.roll { background: var(--accent-green); }
         .legend-color.quiet { background: #555577; }
-        
+
         .monitor-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 12px;
         }
+
         .monitor-card {
             background: #050505;
-            border: 1px solid #222;
-            border-radius: 0px; /* 角丸なし */
+            border: 1px solid #222222;
+            border-radius: 0px;
             padding: 10px;
             display: flex;
             flex-direction: column;
             gap: 6px;
         }
+
         .monitor-card.log-card {
             grid-column: span 2;
         }
+
         @media (max-width: 900px) {
             .monitor-card.log-card {
                 grid-column: span 1;
             }
         }
+
         .card-header {
             font-weight: 700;
             font-size: 10px;
@@ -492,31 +281,37 @@
             padding-bottom: 4px;
             text-transform: uppercase;
         }
+
         .card-body {
             display: flex;
             flex-direction: column;
             gap: 4px;
             font-size: 10px;
         }
+
         .stat-row {
             display: flex;
             justify-content: space-between;
             line-height: 1.4;
         }
+
         .stat-label {
             color: var(--text-muted);
         }
+
         .stat-val {
             font-weight: 500;
             font-family: "Helvetica Neue", Helvetica, Arial, monospace;
-            color: #fff;
+            color: #ffffff;
         }
+
         .scroll-log {
-            height: 140px; /* 縦幅に余裕を持たせる */
+            height: 140px;
             overflow-y: auto;
             font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
             letter-spacing: normal;
         }
+
         .log-line {
             border-bottom: 1px solid #1a1a1a;
             padding: 4px 6px;
@@ -527,9 +322,11 @@
             overflow: hidden;
             text-overflow: ellipsis;
         }
+
         .log-line.info { color: var(--accent-blue); }
         .log-line.success { color: var(--accent-green); }
         .log-line.warning { color: var(--accent-orange); }
+
         /* Start Overlay CSS */
         #start-overlay {
             position: fixed;
@@ -545,72 +342,24 @@
             letter-spacing: 2px;
             transition: opacity 0.5s ease;
         }
+
         .start-btn {
             padding: 10px 20px;
-            border: 1px solid #fff;
+            border: 1px solid #ffffff;
             font-size: 0.85rem;
             font-family: Helvetica, Arial, sans-serif;
             letter-spacing: 1px;
             cursor: pointer;
             border-radius: 0px;
             background: transparent;
-            color: #fff;
+            color: #ffffff;
             transition: all 0.2s ease;
         }
+
         .start-btn:hover {
-            background-color: #fff;
-            color: #000;
-        }
-        /* Playback fullscreen clean aesthetic for Art Appreciation */
-        body.is-playing header {
-            display: none !important;
-        }
-        body.is-playing .dashboard {
-            display: none !important;
-        }
-        body.is-playing .main-container {
-            padding: 0 !important;
-            margin: 0 !important;
-            height: auto !important;
-            width: 100vw !important;
-            max-width: 100% !important;
-            display: block !important;
-            background-color: #000000 !important;
-        }
-        body.is-playing .display-area {
-            width: 100% !important;
-            height: 2060px !important;
-            display: block !important;
-            background-color: #000000 !important;
-            position: relative !important;
-        }
-        body.is-playing .screen-container {
-            width: 100% !important;
-            height: 1240px !important;
-            display: flex !important;
-            justify-content: center !important;
-            align-items: flex-start !important;
-            margin: 0 !important;
-            padding-top: 410px !important;
-            box-sizing: border-box !important;
-            gap: 100px !important;
-        }
-        body.is-playing .screen-wrapper {
-            width: 640px !important;
-            height: 1240px !important;
-            max-width: 640px !important;
-            max-height: 1240px !important;
-        }
-        body.is-playing .collage-wrapper {
-            display: block !important;
-            width: 2060px !important;
-            height: 2060px !important;
-            max-width: 2060px !important;
-            max-height: 2060px !important;
-            margin: auto !important;
-            border: none !important;
-        }
-    </style>
+            background-color: #ffffff;
+            color: #000000;
+        }</style>
 </head>
 <body>
     <!-- Playback Mode Selection Overlay -->

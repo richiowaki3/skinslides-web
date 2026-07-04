@@ -1537,27 +1537,12 @@ function triggerCollageVideo(event) {
     }
     const blobUrl = window.videoBlobCache[fileName] || (VIDEO_BASE_PATH + finalFileName);
     
-    // "動画は自由にサイズを変えてよい" (指定サイズのトリミングのみで、アスペクトは16:9のまま変更しない)
-    const W = FIB_SIZES[Math.floor(Math.random() * FIB_SIZES.length)];
-    const H = Math.round(W * 9 / 16); // 16:9 アスペクト比を厳密に維持
-    
-    // "動画をトリミング" (フィボナッチパーセンテージで切り抜く)
-    const tCrop = FIB_CROPS[Math.floor(Math.random() * FIB_CROPS.length)];
-    const rCrop = FIB_CROPS[Math.floor(Math.random() * FIB_CROPS.length)];
-    const bCrop = FIB_CROPS[Math.floor(Math.random() * FIB_CROPS.length)];
-    const lCrop = FIB_CROPS[Math.floor(Math.random() * FIB_CROPS.length)];
-    
-    // "動画は自由に回転してよい" (任意の角度で自由に回転、ここでは整列美のため0, 90, 180, 270度から選択)
-    const ROTATIONS = [0, 90, 180, 270];
-    const rot = ROTATIONS[Math.floor(Math.random() * ROTATIONS.length)];
-    
-    // 未回転状態でのトリミング後（可視）サイズを算出
-    const visW = W * (100 - lCrop - rCrop) / 100;
-    const visH = H * (100 - tCrop - bCrop) / 100;
-    
-    // 回転状態に応じた実際の可視サイズ (90度・270度は幅と高さが入れ替わる)
-    const rotVisW = (rot === 90 || rot === 270) ? visH : visW;
-    const rotVisH = (rot === 90 || rot === 270) ? visW : visH;
+    // "トリミングすると1:2 (または2:1) である。アスペクト固定でサイズを変えることができる"
+    // 短辺 S をフィボナッチサイズから選択し、長辺は 2 * S とすることでアスペクト比 1:2 / 2:1 を固定する
+    const S = FIB_SIZES[Math.floor(Math.random() * FIB_SIZES.length)];
+    const isVertical = Math.random() < 0.5;
+    const visW = isVertical ? S : 2 * S;
+    const visH = isVertical ? 2 * S : S;
     
     let newVLeft = 0;
     let newVTop = 0;
@@ -1586,10 +1571,10 @@ function triggerCollageVideo(event) {
                 newVLeft = lastBox.vRight;
                 newVTop = lastBox.vTop + shift;
             } else if (side === "left") {
-                newVLeft = lastBox.vLeft - rotVisW;
+                newVLeft = lastBox.vLeft - visW;
                 newVTop = lastBox.vTop + shift;
             } else if (side === "top") {
-                newVTop = lastBox.vTop - rotVisH;
+                newVTop = lastBox.vTop - visH;
                 newVLeft = lastBox.vLeft + shift;
             } else if (side === "bottom") {
                 newVTop = lastBox.vBottom;
@@ -1597,8 +1582,8 @@ function triggerCollageVideo(event) {
             }
             
             // 安全領域内 (1280x720 境界内) に収まるかチェック
-            const rightBound = newVLeft + rotVisW;
-            const bottomBound = newVTop + rotVisH;
+            const rightBound = newVLeft + visW;
+            const bottomBound = newVTop + visH;
             
             if (newVLeft >= 20 && rightBound <= 1260 && newVTop >= 50 && bottomBound <= 670) {
                 placedSuccessfully = true;
@@ -1613,46 +1598,46 @@ function triggerCollageVideo(event) {
         const startEdge = ["left", "right", "top", "bottom"][Math.floor(Math.random() * 4)];
         if (startEdge === "left") {
             newVLeft = 20;
-            newVTop = 50 + Math.random() * (620 - rotVisH);
+            newVTop = 50 + Math.random() * (620 - visH);
         } else if (startEdge === "right") {
-            newVLeft = 1260 - rotVisW;
-            newVTop = 50 + Math.random() * (620 - rotVisH);
+            newVLeft = 1260 - visW;
+            newVTop = 50 + Math.random() * (620 - visH);
         } else if (startEdge === "top") {
             newVTop = 50;
-            newVLeft = 20 + Math.random() * (1240 - rotVisW);
+            newVLeft = 20 + Math.random() * (1240 - visW);
         } else { // bottom
-            newVTop = 670 - rotVisH;
-            newVLeft = 20 + Math.random() * (1240 - rotVisW);
+            newVTop = 670 - visH;
+            newVLeft = 20 + Math.random() * (1240 - visW);
         }
         lastBox = { exitSide: "start" };
     }
     
     // ウィンドウの辺に近づいたらぴったりくっつける（スナップ処理）
     if (Math.abs(newVLeft - 20) < 15) newVLeft = 20;
-    if (Math.abs((newVLeft + rotVisW) - 1260) < 15) newVLeft = 1260 - rotVisW;
+    if (Math.abs((newVLeft + visW) - 1260) < 15) newVLeft = 1260 - visW;
     if (Math.abs(newVTop - 50) < 15) newVTop = 50;
-    if (Math.abs((newVTop + rotVisH) - 670) < 15) newVTop = 670 - rotVisH;
+    if (Math.abs((newVTop + visH) - 670) < 15) newVTop = 670 - visH;
     
     // 今回表示される可視バウンディングボックスを次回の参照用に保存
     lastBox.vLeft = newVLeft;
     lastBox.vTop = newVTop;
-    lastBox.vRight = newVLeft + rotVisW;
-    lastBox.vBottom = newVTop + rotVisH;
+    lastBox.vRight = newVLeft + visW;
+    lastBox.vBottom = newVTop + visH;
     
-    // 可視位置（newVLeft/Top）から、動画要素自体の実際の CSS left/top スタイルを逆算
-    let elemLeft = 0;
-    let elemTop = 0;
+    // 新しいラッパー（トリミング枠）エレメントを作成
+    const wrapperEl = document.createElement("div");
+    wrapperEl.style.position = "absolute";
+    wrapperEl.style.width = `${visW}px`;
+    wrapperEl.style.height = `${visH}px`;
+    wrapperEl.style.left = `${newVLeft}px`;
+    wrapperEl.style.top = `${newVTop}px`;
+    wrapperEl.style.overflow = "hidden";
+    wrapperEl.style.zIndex = collageZIndex++;
     
-    if (rot === 0 || rot === 180) {
-        elemLeft = newVLeft - (lCrop / 100) * W;
-        elemTop = newVTop - (tCrop / 100) * H;
-    } else {
-        // 90度または270度の場合は、回転した中心点を軸に位置を逆算
-        const cX = newVLeft + rotVisW / 2;
-        const cY = newVTop + rotVisH / 2;
-        elemLeft = cX - W / 2;
-        elemTop = cY - H / 2;
-    }
+    // オーバーラップが明確にわかるように境界線と影を適用
+    wrapperEl.style.border = "1px solid rgba(255, 255, 255, 0.15)";
+    wrapperEl.style.boxShadow = "0 8px 30px rgba(0,0,0,0.6)";
+    wrapperEl.style.transition = "opacity 0.5s ease";
     
     // 新しい動画エレメントを作成
     const videoEl = document.createElement("video");
@@ -1662,24 +1647,27 @@ function triggerCollageVideo(event) {
     videoEl.loop = false;
     videoEl.src = blobUrl;
     
-    // CSS スタイルの適用
-    videoEl.style.position = "absolute";
-    videoEl.style.width = `${W}px`;
-    videoEl.style.height = `${H}px`;
-    videoEl.style.left = `${elemLeft}px`;
-    videoEl.style.top = `${elemTop}px`;
-    videoEl.style.transform = `rotate(${rot}deg)`;
-    videoEl.style.clipPath = `inset(${tCrop}% ${rCrop}% ${bCrop}% ${lCrop}%)`;
-    videoEl.style.objectFit = "cover"; // レターボックス（黒帯）を出さずに枠内にフィット
-    videoEl.style.zIndex = collageZIndex++;
+    videoEl.style.width = "100%";
+    videoEl.style.height = "100%";
+    videoEl.style.objectFit = "cover"; // 元の映像のアスペクト比（16:9）を歪めずに枠にフィットさせる
     
-    // オーバーラップが明確にわかるように境界線を適用
-    videoEl.style.border = "1px solid rgba(255, 255, 255, 0.15)";
-    videoEl.style.boxShadow = "0 8px 30px rgba(0,0,0,0.6)";
-    videoEl.style.transition = "opacity 0.5s ease";
+    // "動画は自由に回転してよい" (任意の角度で自由に回転、ここでは整列美のため0, 90, 180, 270度から選択)
+    const ROTATIONS = [0, 90, 180, 270];
+    const rot = ROTATIONS[Math.floor(Math.random() * ROTATIONS.length)];
+    if (rot !== 0) {
+        if (rot === 90 || rot === 270) {
+            // 90度または270度回転する場合、アスペクト比の逆数を取って縮小・拡大して枠をカバーする
+            const scale = Math.max(visW / visH, visH / visW);
+            videoEl.style.transform = `rotate(${rot}deg) scale(${scale})`;
+        } else {
+            videoEl.style.transform = `rotate(${rot}deg)`;
+        }
+    }
+    
+    wrapperEl.appendChild(videoEl);
     
     // コンテナへ追加
-    collageContainer.appendChild(videoEl);
+    collageContainer.appendChild(wrapperEl);
     
     // 表示上限（MAX_COLLAGE_VIDEOS）に達した古い動画は、滑らかに消去
     if (collageVideos.length >= MAX_COLLAGE_VIDEOS) {
@@ -1692,9 +1680,9 @@ function triggerCollageVideo(event) {
         }
     }
     
-    collageVideos.push(videoEl);
+    collageVideos.push(wrapperEl);
     
-    // 再生完了した動画は最後のフレームで静止（一個前の絵の上には重なって残る）
+    // 再生完了した動画は最後のフレームで静止
     videoEl.onended = () => {
         videoEl.pause();
     };

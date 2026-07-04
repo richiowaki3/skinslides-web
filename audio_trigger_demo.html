@@ -357,6 +357,18 @@
             display: none;
         }
 
+        /* Duet Collage Single Frame Container (Pattern B Test) */
+        #duet-collage-container {
+            display: none;
+            position: relative;
+            width: 100%;
+            height: 443px; /* Match the vertical screen wrapper height */
+            background-color: #050505;
+            border: 1px solid #222;
+            overflow: hidden;
+            box-sizing: border-box;
+        }
+
         /* Analysis Dashboard Styles - Swiss Design / Helvetica / Sharp */
         .analysis-dashboard {
             width: 100%;
@@ -623,7 +635,7 @@
 
         <!-- 3画面ディスプレイ (右側) -->
         <div class="display-area">
-            <div class="screen-container">
+            <div class="screen-container" id="normal-screens-container">
                 <!-- Screen 1 -->
                 <div class="screen-wrapper" id="wrapper-1">
                     <span class="screen-label">SCREEN 1</span>
@@ -651,6 +663,8 @@
                     </div>
                 </div>
             </div>
+            <!-- Duet Collage Single Frame Container (Pattern B Test) -->
+            <div id="duet-collage-container"></div>
         </div>
     </div>
 

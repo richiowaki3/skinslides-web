@@ -498,12 +498,18 @@ function stopSequence() {
 }
 
 const activeAgentDisplay = document.getElementById("active-agent");
+const collageContainer = document.getElementById("duet-collage-container");
+const normalScreensContainer = document.getElementById("normal-screens-container");
 
 let duetState = {
     activeAgent: "AgentB", // Start with Agent B (Ambient)
     turnTimeElapsed: 0,
     turnMaxDuration: 25000
 };
+
+let collageVideos = [];
+const MAX_COLLAGE_VIDEOS = 4;
+let collageZIndex = 1;
 
 let isCutUpPlaying = false;
 let cutUpNode = null;
@@ -526,6 +532,13 @@ function startCutUpPlayback() {
         cutupButton.style.boxShadow = "0 4px 15px rgba(255, 0, 85, 0.3)";
     }
     
+    // Show duet collage container and hide normal screens container
+    if (collageContainer) collageContainer.style.display = "block";
+    if (normalScreensContainer) normalScreensContainer.style.display = "none";
+    
+    // Clear any previous collage videos
+    clearCollageVideos();
+    
     duetState.activeAgent = "AgentB";
     duetState.turnTimeElapsed = 0;
     duetState.turnMaxDuration = 20000 + Math.random() * 15000; // 20s to 35s
@@ -540,10 +553,7 @@ function startCutUpPlayback() {
         strength: 0.1,
         onomatopoeia: "しんしん"
     };
-    let startChosen = new Set();
-    [1, 2, 3].forEach(screenNum => {
-        reactScreenWithVideo(screenNum, initialQuietEvent, startChosen);
-    });
+    triggerCollageVideo(initialQuietEvent);
 
     playNextCutUpSlice();
     requestAnimationFrame(updateCutUpLoop);
@@ -561,6 +571,13 @@ function stopCutUpPlayback() {
         activeAgentDisplay.textContent = "IDLE";
         activeAgentDisplay.style.color = "var(--text-muted)";
     }
+    
+    // Hide duet collage container and show normal screens container
+    if (collageContainer) collageContainer.style.display = "none";
+    if (normalScreensContainer) normalScreensContainer.style.display = "flex";
+    
+    // Clear collage videos
+    clearCollageVideos();
     
     // Clear idle timer
     if (idleTimer) {
@@ -741,25 +758,8 @@ function playNextCutUpSlice() {
             // Log trigger
             logMessage("TRIGGER", `[CUT-UP - ${duetState.activeAgent}] ${event.onomatopoeia} (Type: ${event.type}, Strength: ${event.strength.toFixed(2)})`);
             
-            // Map strength to level
-            let audioLevel = 1;
-            if (event.strength >= 0.75 || event.type === "アタック") {
-                audioLevel = 4;
-            } else if (event.strength >= 0.5) {
-                audioLevel = 3;
-            } else if (event.strength >= 0.25) {
-                audioLevel = 2;
-            }
-            
-            let numScreens = 1;
-            if (audioLevel === 4) numScreens = 3;
-            else if (audioLevel === 3) numScreens = 2;
-            
-            const screensToPlay = getScreensToPlay(numScreens);
-            let chosenInTrigger = new Set();
-            screensToPlay.forEach(screenNum => {
-                reactScreenWithVideo(screenNum, event, chosenInTrigger);
-            });
+            // Trigger collage video (takes turn on the single frame)
+            triggerCollageVideo(event);
         }, delayMs);
         
         cutUpVideoTimeouts.push(timeoutId);
@@ -1490,3 +1490,100 @@ function addDecisionLog(message, type = "info") {
     }
 }
 window.addDecisionLog = addDecisionLog; // player.jsからも呼べるようにグローバル化
+
+// Duet Collage Trigger and helper functions (Pattern B Test Only)
+function triggerCollageVideo(event) {
+    if (!isCutUpPlaying || !collageContainer) return;
+    
+    // Determine audio level
+    let audioLevel = 1;
+    if (event.strength >= 0.75 || event.type === "アタック") {
+        audioLevel = 4;
+    } else if (event.strength >= 0.5) {
+        audioLevel = 3;
+    } else if (event.strength >= 0.25) {
+        audioLevel = 2;
+    }
+    
+    // Select video data (always use new Set() so we can reuse files in this test collage)
+    const videoData = selectVideoByLevel(audioLevel, new Set());
+    if (!videoData) return;
+    
+    const fileName = videoData[0];
+    let finalFileName = fileName;
+    const match = fileName.match(/(\d+)\.(mov|mp4)/i);
+    if (match) {
+        finalFileName = `${match[1]}-Sss720p.mp4`;
+    }
+    
+    const blobUrl = window.videoBlobCache[fileName] || (VIDEO_BASE_PATH + finalFileName);
+    
+    // Create new video element
+    const videoEl = document.createElement("video");
+    videoEl.autoplay = true;
+    videoEl.playsInline = true;
+    videoEl.muted = true; // Video tracks should be muted for collage to let soundtrack play
+    videoEl.loop = false;
+    videoEl.src = blobUrl;
+    
+    // Styling: "絵は横に戻す" (Horizontal, transform: none)
+    videoEl.style.position = "absolute";
+    videoEl.style.transform = "none";
+    
+    // "サイズを変える"
+    const randWidth = 40 + Math.random() * 30; // 40% to 70% width
+    const randLeft = Math.random() * (100 - randWidth);
+    const randTop = Math.random() * 40; // 0% to 40% height
+    
+    videoEl.style.width = `${randWidth}%`;
+    videoEl.style.left = `${randLeft}%`;
+    videoEl.style.top = `${randTop}%`;
+    
+    // "トリミングする" (clip-path inset)
+    const t = Math.floor(Math.random() * 20);
+    const r = Math.floor(Math.random() * 20);
+    const b = Math.floor(Math.random() * 20);
+    const l = Math.floor(Math.random() * 20);
+    videoEl.style.clipPath = `inset(${t}% ${r}% ${b}% ${l}%)`;
+    
+    // "何枚か重なる" (absolute positioning with increasing z-index)
+    videoEl.style.zIndex = collageZIndex++;
+    
+    // Visual aesthetic touch: subtle border & shadow to show overlap clearly
+    videoEl.style.border = "1px solid rgba(255, 255, 255, 0.15)";
+    videoEl.style.boxShadow = "0 8px 30px rgba(0,0,0,0.6)";
+    videoEl.style.transition = "opacity 0.5s ease";
+    
+    // Add to container
+    collageContainer.appendChild(videoEl);
+    
+    // Remove oldest if we exceed limit
+    if (collageVideos.length >= MAX_COLLAGE_VIDEOS) {
+        const oldest = collageVideos.shift();
+        if (oldest) {
+            oldest.style.opacity = 0;
+            setTimeout(() => {
+                oldest.remove();
+            }, 500); // smooth fade out before removing
+        }
+    }
+    
+    collageVideos.push(videoEl);
+    
+    // Handle ended video to stay frozen
+    videoEl.onended = () => {
+        videoEl.pause();
+    };
+    
+    videoEl.play().catch(e => {
+        console.error("[demo] Collage video play failed:", e);
+    });
+}
+
+function clearCollageVideos() {
+    if (collageContainer) {
+        collageContainer.innerHTML = "";
+    }
+    collageVideos = [];
+    collageZIndex = 1;
+}

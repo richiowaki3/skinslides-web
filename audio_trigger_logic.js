@@ -471,6 +471,15 @@ function playSequence() {
         stopCutUpPlayback();
     }
     
+    // Auto-select first available track if none is selected
+    if (trackSelect && !trackSelect.value) {
+        const firstOption = Array.from(trackSelect.options).find(o => o.value !== "");
+        if (firstOption) {
+            trackSelect.value = firstOption.value;
+            handleTrackChange();
+        }
+    }
+    
     // Initialize Web Audio Context on user interaction
     initAudioContext();
     if (audioCtx && audioCtx.state === "suspended") {

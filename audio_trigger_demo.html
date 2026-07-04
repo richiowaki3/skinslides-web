@@ -589,26 +589,22 @@
         body.is-playing .dashboard {
             display: none !important;
         }
-        body.is-playing .analysis-dashboard {
-            display: none !important;
-        }
         body.is-playing .main-container {
             padding: 0 !important;
             margin: 0 !important;
-            height: 100vh !important;
+            height: auto !important;
             width: 100vw !important;
             max-width: 100% !important;
-            display: flex !important;
-            justify-content: center !important;
-            align-items: center !important;
+            display: block !important;
             background-color: #000000 !important;
         }
         body.is-playing .display-area {
             width: 100% !important;
-            height: 100% !important;
+            height: 100vh !important;
             display: flex !important;
             justify-content: center !important;
             align-items: center !important;
+            background-color: #000000 !important;
         }
         body.is-playing .screen-container {
             width: 100% !important;
@@ -646,8 +642,8 @@
         
         <!-- Launch Buttons (shown after load) -->
         <div id="overlay-buttons-container" style="display: none; gap: 20px; margin-bottom: 20px;">
-            <div class="start-btn" id="choose-plan-a">[Play A]</div>
-            <div class="start-btn" id="choose-plan-b">[Play B]</div>
+            <div class="start-btn" id="choose-plan-a">Play A</div>
+            <div class="start-btn" id="choose-plan-b">Play B</div>
         </div>
         
         <div class="credits" style="margin-top: 45px; font-family: Helvetica, Arial, sans-serif; font-size: 11px; line-height: 1.7; color: #8892b0; text-align: center; font-weight: 300; letter-spacing: 0.5px;">

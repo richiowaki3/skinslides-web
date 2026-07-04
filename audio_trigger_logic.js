@@ -630,16 +630,26 @@ function playNextCutUpSlice() {
         }
     }
     
-    let targetDuration = 1.5;
+    // フィボナッチ数列による再生尺（秒）の決定
+    const FIBONACCI_SECS = [1, 2, 3, 5, 8, 13, 21, 34, 55, 89];
+    const validFibs = FIBONACCI_SECS.filter(f => f <= audioBuffer.duration);
+    if (validFibs.length === 0) validFibs.push(1);
+    
+    let targetDuration = 1.0;
+    const splitIndex = Math.max(1, Math.floor(validFibs.length / 2));
+    
+    if (duetState.activeAgent === "AgentA") {
+        const pool = validFibs.slice(0, Math.min(validFibs.length, splitIndex + 1));
+        targetDuration = pool[Math.floor(Math.random() * pool.length)];
+    } else {
+        const pool = validFibs.slice(splitIndex);
+        targetDuration = pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : validFibs[validFibs.length - 1];
+    }
+
     let targetStartTime = 0.0;
     let events = [];
     
     if (!trackData || !trackData.triggers.events || trackData.triggers.events.length === 0) {
-        if (duetState.activeAgent === "AgentA") {
-            targetDuration = 0.4 + Math.random() * 1.4;
-        } else {
-            targetDuration = 12.0 + Math.random() * 18.0;
-        }
         targetStartTime = Math.random() * Math.max(0.1, audioBuffer.duration - targetDuration);
     } else {
         const eventsPool = trackData.triggers.events;
@@ -649,13 +659,11 @@ function playNextCutUpSlice() {
             // Agent A prefers "アタック"
             const attacks = eventsPool.filter(e => e.type === "アタック");
             chosenEvent = attacks.length > 0 ? attacks[Math.floor(Math.random() * attacks.length)] : eventsPool[Math.floor(Math.random() * eventsPool.length)];
-            targetDuration = 0.4 + Math.random() * 1.4;
             targetStartTime = Math.max(0, chosenEvent.time_sec - 0.1 - Math.random() * 0.2);
         } else {
             // Agent B prefers "うねり" or "静寂"
             const ambients = eventsPool.filter(e => e.type === "うねり" || e.type === "静寂");
             chosenEvent = ambients.length > 0 ? ambients[Math.floor(Math.random() * ambients.length)] : eventsPool[Math.floor(Math.random() * eventsPool.length)];
-            targetDuration = 12.0 + Math.random() * 18.0;
             targetStartTime = Math.max(0, chosenEvent.time_sec - 1.0 - Math.random() * 2.0);
         }
         

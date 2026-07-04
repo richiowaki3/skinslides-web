@@ -1,0 +1,5 @@
+# Local-only raw audio assets (production streams these from Cloudflare R2 instead)
+audios/
+
+# Local deployment scripts containing environment-specific credentials
+deploy_to_z_drive.bat

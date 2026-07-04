@@ -1890,16 +1890,6 @@ function clearCollageVideos() {
 }
 
 
-// Click anywhere on body to stop playback (Art Appreciation escape)
-document.addEventListener("click", (e) => {
-    if (document.body.classList.contains("is-playing")) {
-        const overlay = document.getElementById("start-overlay");
-        if (overlay && overlay.style.display !== "none") return;
-        
-        if (isPlaying) stopSequence();
-        if (isCutUpPlaying) stopCutUpPlayback();
-    }
-});
 
 // Escape key to stop playback
 document.addEventListener("keydown", (e) => {

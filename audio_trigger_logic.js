@@ -292,12 +292,8 @@ function logMessage(type, message) {
     logPanel.scrollTop = logPanel.scrollHeight;
 }
 
-// Track change handler
-function handleTrackChange() {
-    stopSequence();
-    
-    if (!trackSelect) return;
-    const fileId = trackSelect.value;
+// Track loader
+function loadTrack(fileId) {
     const trackData = audioMetadataPool.find(t => t.file_id === fileId);
     if (!trackData) return;
 
@@ -310,6 +306,13 @@ function handleTrackChange() {
 
     const trackNameEl = document.getElementById("ana-track-name");
     if (trackNameEl) trackNameEl.textContent = mp3FileName;
+    
+    // Also update timeline Agent A track label (Item 3)
+    const agentLabelA = document.getElementById("timeline-agent-label-a");
+    if (agentLabelA) {
+        agentLabelA.innerHTML = `Track: <span id="ana-track-name-a" style="color: var(--text-muted); font-weight: normal;">${mp3FileName}</span>`;
+    }
+
     addDecisionLog(`--- Loaded track: ${mp3FileName} ---`, "success");
 
     // Prepare events
@@ -390,6 +393,14 @@ function handleTrackChange() {
     logMessage("SYSTEM", `Duration: ${trackData.notes.duration_sec}s, Total Events: ${currentTrackEvents.length}`);
 
     updateNextTriggerDisplay();
+}
+
+// Track change handler
+function handleTrackChange() {
+    stopSequence();
+    if (!trackSelect) return;
+    const fileId = trackSelect.value;
+    loadTrack(fileId);
 }
 
 function updateNextTriggerDisplay() {
@@ -476,9 +487,13 @@ function playSequence() {
         const firstOption = Array.from(trackSelect.options).find(o => o.value !== "");
         if (firstOption) {
             trackSelect.value = firstOption.value;
-            handleTrackChange();
+            loadTrack(firstOption.value); // Load directly without calling stopSequence()!
         }
     }
+    
+    // Hide timeline track B for simple single track display (Item 3)
+    const sectionB = document.getElementById("timeline-section-b");
+    if (sectionB) sectionB.style.display = "none";
     
     // Initialize Web Audio Context on user interaction
     initAudioContext();
@@ -537,8 +552,12 @@ function stopSequence() {
     if (playButton) {
         playButton.textContent = "Play Sequence";
         playButton.style.background = "linear-gradient(135deg, #0088ff 0%, #00bfff 100%)";
-        playButton.style.boxShadow = "0 4px 15px rgba(0, 191, 255, 0.3)";
+        playButton.style.boxShadow = "none";
     }
+    
+    // Restore timeline B section
+    const sectionB = document.getElementById("timeline-section-b");
+    if (sectionB) sectionB.style.display = "block";
     
     // Clear idle timer
     if (idleTimer) {
@@ -618,6 +637,15 @@ function startCutUpPlayback() {
         cutupButton.textContent = "Stop Cut-up Test";
         cutupButton.style.background = "linear-gradient(135deg, #ff3366 0%, #ff0055 100%)";
         cutupButton.style.boxShadow = "none";
+    }
+    
+    // Show timeline track B and restore Agent label titles (Item 3)
+    const sectionB = document.getElementById("timeline-section-b");
+    if (sectionB) sectionB.style.display = "block";
+    
+    const agentLabelA = document.getElementById("timeline-agent-label-a");
+    if (agentLabelA) {
+        agentLabelA.innerHTML = `Agent A (Slicer / Left): <span id="ana-track-name-a" style="color: var(--text-muted); font-weight: normal;">None</span>`;
     }
     
     // Show duet collage wrapper and hide normal screens container
@@ -1037,7 +1065,7 @@ function updateLoop() {
     if (progressBar) progressBar.style.width = `${progressPercent}%`;
 
     // Timeline and monitor updates
-    drawTimeline(currentTime, duration, currentTrackEvents);
+    drawTimeline("timeline-canvas-a", currentTime, duration, currentTrackEvents);
     updateMonitorUI();
     const timeEl = document.getElementById("ana-time");
     if (timeEl) timeEl.textContent = `${currentTime.toFixed(1)}s / ${duration.toFixed(1)}s`;

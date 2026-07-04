@@ -499,6 +499,7 @@ function stopSequence() {
 
 const activeAgentDisplay = document.getElementById("active-agent");
 const collageContainer = document.getElementById("duet-collage-container");
+const collageWrapper = document.getElementById("duet-collage-wrapper");
 const normalScreensContainer = document.getElementById("normal-screens-container");
 
 let duetState = {
@@ -508,8 +509,22 @@ let duetState = {
 };
 
 let collageVideos = [];
-const MAX_COLLAGE_VIDEOS = 4;
+const MAX_COLLAGE_VIDEOS = 6; // 最大6枚まで重ねて蛇のような軌跡を描く
 let collageZIndex = 1;
+let lastBox = null; // 直前に配置された動画の実際の可視バウンディングボックス
+
+const FIB_SIZES = [144, 233, 377, 610];
+const FIB_CROPS = [0, 5, 8, 13, 21]; // フィボナッチパーセンテージによるトリミング幅
+
+function resizeCollage() {
+    const container = document.getElementById("duet-collage-container");
+    const wrapper = document.getElementById("duet-collage-wrapper");
+    if (wrapper && container) {
+        const scale = wrapper.clientWidth / 1280;
+        container.style.transform = `scale(${scale})`;
+    }
+}
+window.addEventListener("resize", resizeCollage);
 
 let isCutUpPlaying = false;
 let cutUpNode = null;
@@ -532,12 +547,16 @@ function startCutUpPlayback() {
         cutupButton.style.boxShadow = "0 4px 15px rgba(255, 0, 85, 0.3)";
     }
     
-    // Show duet collage container and hide normal screens container
-    if (collageContainer) collageContainer.style.display = "block";
+    // Show duet collage wrapper and hide normal screens container
+    if (collageWrapper) collageWrapper.style.display = "block";
     if (normalScreensContainer) normalScreensContainer.style.display = "none";
     
-    // Clear any previous collage videos
+    // Adjust scaling immediately
+    resizeCollage();
+    
+    // Clear any previous collage videos and state
     clearCollageVideos();
+    lastBox = null;
     
     duetState.activeAgent = "AgentB";
     duetState.turnTimeElapsed = 0;
@@ -572,12 +591,13 @@ function stopCutUpPlayback() {
         activeAgentDisplay.style.color = "var(--text-muted)";
     }
     
-    // Hide duet collage container and show normal screens container
-    if (collageContainer) collageContainer.style.display = "none";
+    // Hide duet collage wrapper and show normal screens container
+    if (collageWrapper) collageWrapper.style.display = "none";
     if (normalScreensContainer) normalScreensContainer.style.display = "flex";
     
-    // Clear collage videos
+    // Clear collage videos and state
     clearCollageVideos();
+    lastBox = null;
     
     // Clear idle timer
     if (idleTimer) {
@@ -1515,62 +1535,151 @@ function triggerCollageVideo(event) {
     if (match) {
         finalFileName = `${match[1]}-Sss720p.mp4`;
     }
-    
     const blobUrl = window.videoBlobCache[fileName] || (VIDEO_BASE_PATH + finalFileName);
     
-    // Create new video element
+    // "動画は自由にサイズを変えてよい" (フィボナッチ数から黄金比に近似させて幅・高さを決定)
+    const W = FIB_SIZES[Math.floor(Math.random() * FIB_SIZES.length)];
+    let H = 144;
+    if (W === 233) H = 144;
+    else if (W === 377) H = 233;
+    else if (W === 610) H = 377;
+    
+    // "動画をトリミング" (フィボナッチパーセンテージで切り抜く)
+    const tCrop = FIB_CROPS[Math.floor(Math.random() * FIB_CROPS.length)];
+    const rCrop = FIB_CROPS[Math.floor(Math.random() * FIB_CROPS.length)];
+    const bCrop = FIB_CROPS[Math.floor(Math.random() * FIB_CROPS.length)];
+    const lCrop = FIB_CROPS[Math.floor(Math.random() * FIB_CROPS.length)];
+    
+    // "動画は自由に回転してよい" (任意の角度で自由に回転、ここでは整列美のため0, 90, 180, 270度から選択)
+    const ROTATIONS = [0, 90, 180, 270];
+    const rot = ROTATIONS[Math.floor(Math.random() * ROTATIONS.length)];
+    
+    // 未回転状態でのトリミング後（可視）サイズを算出
+    const visW = W * (100 - lCrop - rCrop) / 100;
+    const visH = H * (100 - tCrop - bCrop) / 100;
+    
+    // 回転状態に応じた実際の可視サイズ (90度・270度は幅と高さが入れ替わる)
+    const rotVisW = (rot === 90 || rot === 270) ? visH : visW;
+    const rotVisH = (rot === 90 || rot === 270) ? visW : visH;
+    
+    let newVLeft = 0;
+    let newVTop = 0;
+    let placedSuccessfully = false;
+    
+    // "トリミングされた辺の隣に次の絵がでる" (一個前の動画に重ねないよう、3辺のどれかを選んで接続)
+    if (lastBox) {
+        const sides = ["top", "bottom", "left", "right"];
+        const oppositeOfLast = {
+            "top": "bottom",
+            "bottom": "top",
+            "left": "right",
+            "right": "left"
+        };
+        const forbiddenSide = oppositeOfLast[lastBox.exitSide] || "";
+        const allowedSides = sides.filter(s => s !== forbiddenSide);
+        
+        // 3辺をランダムにシャッフル
+        allowedSides.sort(() => Math.random() - 0.5);
+        
+        for (let side of allowedSides) {
+            // 接する位置を計算し、少しのランダムなズレ（フィボナッチ数）を加える
+            const shift = [-21, -13, -8, 0, 8, 13, 21][Math.floor(Math.random() * 7)];
+            
+            if (side === "right") {
+                newVLeft = lastBox.vRight;
+                newVTop = lastBox.vTop + shift;
+            } else if (side === "left") {
+                newVLeft = lastBox.vLeft - rotVisW;
+                newVTop = lastBox.vTop + shift;
+            } else if (side === "top") {
+                newVTop = lastBox.vTop - rotVisH;
+                newVLeft = lastBox.vLeft + shift;
+            } else if (side === "bottom") {
+                newVTop = lastBox.vBottom;
+                newVLeft = lastBox.vLeft + shift;
+            }
+            
+            // 安全領域内 (1280x720 境界内) に収まるかチェック
+            const rightBound = newVLeft + rotVisW;
+            const bottomBound = newVTop + rotVisH;
+            
+            if (newVLeft >= 20 && rightBound <= 1260 && newVTop >= 50 && bottomBound <= 670) {
+                placedSuccessfully = true;
+                lastBox.exitSide = side; // 新しい進行方向を exitSide に上書き記録
+                break;
+            }
+        }
+    }
+    
+    // 初回、または画面端に達して接続先がない場合は、安全領域内のランダム位置から新しく蛇の道（軌跡）をスタートする
+    if (!placedSuccessfully) {
+        newVLeft = 20 + Math.random() * (1240 - rotVisW);
+        newVTop = 50 + Math.random() * (620 - rotVisH);
+        lastBox = { exitSide: "start" };
+    }
+    
+    // 今回表示される可視バウンディングボックスを次回の参照用に保存
+    lastBox.vLeft = newVLeft;
+    lastBox.vTop = newVTop;
+    lastBox.vRight = newVLeft + rotVisW;
+    lastBox.vBottom = newVTop + rotVisH;
+    
+    // 可視位置（newVLeft/Top）から、動画要素自体の実際の CSS left/top スタイルを逆算
+    let elemLeft = 0;
+    let elemTop = 0;
+    
+    if (rot === 0 || rot === 180) {
+        elemLeft = newVLeft - (lCrop / 100) * W;
+        elemTop = newVTop - (tCrop / 100) * H;
+    } else {
+        // 90度または270度の場合は、回転した中心点を軸に位置を逆算
+        const cX = newVLeft + rotVisW / 2;
+        const cY = newVTop + rotVisH / 2;
+        elemLeft = cX - W / 2;
+        elemTop = cY - H / 2;
+    }
+    
+    // 新しい動画エレメントを作成
     const videoEl = document.createElement("video");
     videoEl.autoplay = true;
     videoEl.playsInline = true;
-    videoEl.muted = true; // Video tracks should be muted for collage to let soundtrack play
+    videoEl.muted = true;
     videoEl.loop = false;
     videoEl.src = blobUrl;
     
-    // Styling: "絵は横に戻す" (Horizontal, transform: none)
+    // CSS スタイルの適用
     videoEl.style.position = "absolute";
-    videoEl.style.transform = "none";
-    
-    // "サイズを変える"
-    const randWidth = 40 + Math.random() * 30; // 40% to 70% width
-    const randLeft = Math.random() * (100 - randWidth);
-    const randTop = Math.random() * 40; // 0% to 40% height
-    
-    videoEl.style.width = `${randWidth}%`;
-    videoEl.style.left = `${randLeft}%`;
-    videoEl.style.top = `${randTop}%`;
-    
-    // "トリミングする" (clip-path inset)
-    const t = Math.floor(Math.random() * 20);
-    const r = Math.floor(Math.random() * 20);
-    const b = Math.floor(Math.random() * 20);
-    const l = Math.floor(Math.random() * 20);
-    videoEl.style.clipPath = `inset(${t}% ${r}% ${b}% ${l}%)`;
-    
-    // "何枚か重なる" (absolute positioning with increasing z-index)
+    videoEl.style.width = `${W}px`;
+    videoEl.style.height = `${H}px`;
+    videoEl.style.left = `${elemLeft}px`;
+    videoEl.style.top = `${elemTop}px`;
+    videoEl.style.transform = `rotate(${rot}deg)`;
+    videoEl.style.clipPath = `inset(${tCrop}% ${rCrop}% ${bCrop}% ${lCrop}%)`;
+    videoEl.style.objectFit = "cover"; // レターボックス（黒帯）を出さずに枠内にフィット
     videoEl.style.zIndex = collageZIndex++;
     
-    // Visual aesthetic touch: subtle border & shadow to show overlap clearly
+    // オーバーラップが明確にわかるように境界線を適用
     videoEl.style.border = "1px solid rgba(255, 255, 255, 0.15)";
     videoEl.style.boxShadow = "0 8px 30px rgba(0,0,0,0.6)";
     videoEl.style.transition = "opacity 0.5s ease";
     
-    // Add to container
+    // コンテナへ追加
     collageContainer.appendChild(videoEl);
     
-    // Remove oldest if we exceed limit
+    // 表示上限（MAX_COLLAGE_VIDEOS）に達した古い動画は、滑らかに消去
     if (collageVideos.length >= MAX_COLLAGE_VIDEOS) {
         const oldest = collageVideos.shift();
         if (oldest) {
             oldest.style.opacity = 0;
             setTimeout(() => {
                 oldest.remove();
-            }, 500); // smooth fade out before removing
+            }, 500);
         }
     }
     
     collageVideos.push(videoEl);
     
-    // Handle ended video to stay frozen
+    // 再生完了した動画は最後のフレームで静止（一個前の絵の上には重なって残る）
     videoEl.onended = () => {
         videoEl.pause();
     };

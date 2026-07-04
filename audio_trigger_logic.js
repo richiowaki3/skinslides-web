@@ -116,7 +116,14 @@ async function loadMetadata() {
         await window.loadFreezeFrames();
 
         // Load audios metadata
-        const resAudios = await fetch("Audio%20analysis%20data/sound_metadata.json");
+        let resAudios;
+        try {
+            resAudios = await fetch("Audio%20analysis%20data/sound_metadata.json");
+            if (!resAudios.ok) throw new Error();
+        } catch (e) {
+            console.warn("[fallback] Failed to fetch sound_metadata.json locally, trying R2 fallback...");
+            resAudios = await fetch(R2_BASE_URL + "Audio%20analysis%20data/sound_metadata.json");
+        }
         audioMetadataPool = await resAudios.json();
         console.log(`[demo] Loaded ${audioMetadataPool.length} audios metadata.`);
 

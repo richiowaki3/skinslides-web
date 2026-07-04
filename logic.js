@@ -73,7 +73,14 @@ async function initSkinslides() {
         players.forEach(p => p.initializePool(VIDEO_BASE_PATH));
 
         // 1. メタデータ (logic_weights.json) のロード
-        const resWeights = await fetch('logic_weights.json');
+        let resWeights;
+        try {
+            resWeights = await fetch('logic_weights.json');
+            if (!resWeights.ok) throw new Error();
+        } catch (e) {
+            console.warn('[fallback] Failed to fetch logic_weights.json locally, trying R2 fallback...');
+            resWeights = await fetch(R2_BASE_URL + 'logic_weights.json');
+        }
         metadataPool = await resWeights.json();
         console.log(`[logic] Loaded ${metadataPool.length} video metadata records.`);
 
@@ -81,7 +88,14 @@ async function initSkinslides() {
         classifyVideos();
 
         // 3. 音響メタデータ (sound_metadata.json) のロード
-        const resAudio = await fetch('Audio%20analysis%20data/sound_metadata.json');
+        let resAudio;
+        try {
+            resAudio = await fetch('Audio%20analysis%20data/sound_metadata.json');
+            if (!resAudio.ok) throw new Error();
+        } catch (e) {
+            console.warn('[fallback] Failed to fetch sound_metadata.json locally, trying R2 fallback...');
+            resAudio = await fetch(R2_BASE_URL + 'Audio%20analysis%20data/sound_metadata.json');
+        }
         audioMetadataPool = await resAudio.json();
         console.log(`[logic] Loaded ${audioMetadataPool.length} audio metadata records.`);
 

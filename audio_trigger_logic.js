@@ -1647,22 +1647,35 @@ function triggerCollageVideo(event) {
     videoEl.loop = false;
     videoEl.src = blobUrl;
     
-    videoEl.style.width = "100%";
-    videoEl.style.height = "100%";
-    videoEl.style.objectFit = "cover"; // 元の映像のアスペクト比（16:9）を歪めずに枠にフィットさせる
-    
-    // "動画は自由に回転してよい" (任意の角度で自由に回転、ここでは整列美のため0, 90, 180, 270度から選択)
+    // "動画は自由に回転してよい" (0, 90, 180, 270度から選択)
     const ROTATIONS = [0, 90, 180, 270];
     const rot = ROTATIONS[Math.floor(Math.random() * ROTATIONS.length)];
-    if (rot !== 0) {
-        if (rot === 90 || rot === 270) {
-            // 90度または270度回転する場合、アスペクト比の逆数を取って縮小・拡大して枠をカバーする
-            const scale = Math.max(visW / visH, visH / visW);
-            videoEl.style.transform = `rotate(${rot}deg) scale(${scale})`;
-        } else {
-            videoEl.style.transform = `rotate(${rot}deg)`;
-        }
+    
+    // 横1280 × 縦720 のソースから [20, 50, 1240, 620] (2:1 アスペクト) のアクティブエリアのみを正確に切り出し、
+    // ラッパーサイズに合わせてスケーリング・回転配置する数学的計算
+    let videoW = 0;
+    let videoH = 0;
+    
+    if (rot === 0 || rot === 180) {
+        // 回転なし、または180度回転の場合
+        videoW = visW * (1280 / 1240);
+        videoH = visH * (720 / 620);
+    } else {
+        // 90度または270度回転の場合 (幅と高さが入れ替わる)
+        videoW = visH * (1280 / 1240);
+        videoH = visW * (720 / 620);
     }
+    
+    // 中央揃えして余白部分をラッパーの外へ隠す (クロップ処理)
+    const leftOffset = (visW - videoW) / 2;
+    const topOffset = (visH - videoH) / 2;
+    
+    videoEl.style.position = "absolute";
+    videoEl.style.width = `${videoW}px`;
+    videoEl.style.height = `${videoH}px`;
+    videoEl.style.left = `${leftOffset}px`;
+    videoEl.style.top = `${topOffset}px`;
+    videoEl.style.transform = `rotate(${rot}deg)`;
     
     wrapperEl.appendChild(videoEl);
     

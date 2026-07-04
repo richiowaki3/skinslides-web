@@ -162,7 +162,7 @@ async function loadMetadata() {
         
         // Hide loading progress on overlay and show launch buttons (Item 7)
         setTimeout(() => {
-            const progressContainer = document.getElementById("overlay-progress-container");
+            const progressContainer = document.getElementById("overlay-preload-status-container");
             const buttonsContainer = document.getElementById("overlay-buttons-container");
             if (progressContainer) progressContainer.style.display = "none";
             if (buttonsContainer) buttonsContainer.style.display = "flex";

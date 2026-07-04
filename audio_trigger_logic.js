@@ -1747,18 +1747,16 @@ function triggerCollageVideo(event) {
     
     // 2060x2060 のウィンドウの辺にくっつける
     if (!placedSuccessfully) {
-        const startEdge = ["left", "right", "top", "bottom"][Math.floor(Math.random() * 4)];
+        // Always start spawning from the top edge to prevent large top blank spaces (Plan B display from top)
+        const startEdge = ["left", "right", "top"][Math.floor(Math.random() * 3)];
         if (startEdge === "left") {
             newVLeft = 0;
-            newVTop = Math.random() * (2060 - visH);
+            newVTop = 0;
         } else if (startEdge === "right") {
             newVLeft = 2060 - visW;
-            newVTop = Math.random() * (2060 - visH);
-        } else if (startEdge === "top") {
             newVTop = 0;
-            newVLeft = Math.random() * (2060 - visW);
-        } else { // bottom
-            newVTop = 2060 - visH;
+        } else { // top
+            newVTop = 0;
             newVLeft = Math.random() * (2060 - visW);
         }
         lastBox = { exitSide: "start" };

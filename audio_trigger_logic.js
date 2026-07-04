@@ -1639,12 +1639,12 @@ function triggerCollageVideo(event) {
     wrapperEl.style.left = `${newVLeft}px`;
     wrapperEl.style.top = `${newVTop}px`;
     wrapperEl.style.overflow = "hidden";
+    wrapperEl.style.opacity = "0"; // 映像の再生開始まで非表示にし、白い外枠フラッシュを防ぐ
     wrapperEl.style.zIndex = collageZIndex++;
     
-    // オーバーラップが明確にわかるように境界線と影を適用
-    wrapperEl.style.border = "1px solid rgba(255, 255, 255, 0.15)";
+    // オーバーラップが明確にわかるように影とフェードトランジションを適用 (白い境界線は完全に削除)
     wrapperEl.style.boxShadow = "0 8px 30px rgba(0,0,0,0.6)";
-    wrapperEl.style.transition = "opacity 0.5s ease";
+    wrapperEl.style.transition = "opacity 0.4s ease";
     
     // 新しい動画エレメントを作成
     const videoEl = document.createElement("video");
@@ -1659,18 +1659,20 @@ function triggerCollageVideo(event) {
     const rot = ROTATIONS[Math.floor(Math.random() * ROTATIONS.length)];
     
     // 横1280 × 縦720 のソースから [20, 50, 1240, 620] (2:1 アスペクト) のアクティブエリアのみを正確に切り出し、
-    // ラッパーサイズに合わせてスケーリング・回転配置する数学的計算
+    // ビデオ自体の16:9比率を厳密に維持しながらラッパーサイズに合わせてスケーリングする数学的計算
     let videoW = 0;
     let videoH = 0;
     
     if (rot === 0 || rot === 180) {
-        // 回転なし、または180度回転の場合
-        videoW = visW * (1280 / 1240);
-        videoH = visH * (720 / 620);
+        // 横長 wrapper の場合
+        const scale = visW / 1240;
+        videoW = 1280 * scale;
+        videoH = 720 * scale;
     } else {
-        // 90度または270度回転の場合 (幅と高さが入れ替わる)
-        videoW = visH * (1280 / 1240);
-        videoH = visW * (720 / 620);
+        // 縦長 wrapper の場合 (回転により映像の幅が縦に並ぶため、ラッパーの高さ visH を基準にスケーリング)
+        const scale = visH / 1240;
+        videoW = 1280 * scale;
+        videoH = 720 * scale;
     }
     
     // 中央揃えして余白部分をラッパーの外へ隠す (クロップ処理)
@@ -1683,6 +1685,11 @@ function triggerCollageVideo(event) {
     videoEl.style.left = `${leftOffset}px`;
     videoEl.style.top = `${topOffset}px`;
     videoEl.style.transform = `rotate(${rot}deg)`;
+    
+    // 動画の再生が始まったタイミングでラッパーを滑らかにフェードイン (空枠の白線表示を防ぐ)
+    videoEl.onplaying = () => {
+        wrapperEl.style.opacity = "1";
+    };
     
     wrapperEl.appendChild(videoEl);
     

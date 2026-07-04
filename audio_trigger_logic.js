@@ -1483,17 +1483,17 @@ function drawTimeline(canvasId, currentTime, duration, events) {
         
         if (e.strength >= 0.75 || e.type === "アタック") {
             level = 4;
-            color = "var(--accent-orange)";
+            color = "#ff7700";
             radius = 5;
             lineH = 30;
         } else if (e.strength >= 0.5) {
             level = 3;
-            color = "var(--accent-blue)";
+            color = "#00bfff";
             radius = 4.5;
             lineH = 22;
         } else if (e.strength >= 0.25) {
             level = 2;
-            color = "var(--accent-green)";
+            color = "#00ffaa";
             radius = 4;
             lineH = 16;
         }

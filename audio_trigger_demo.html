@@ -64,12 +64,25 @@
         }
 
         /* Display area occupying the full performance canvas (2060px height) */
-        .display-area {
+        .display-area-wrapper {
             width: 100% !important;
+            height: calc(2060px * var(--app-scale, 1)) !important;
+            overflow: hidden !important;
+            background-color: #000000 !important;
+            display: flex !important;
+            justify-content: center !important;
+            align-items: flex-start !important;
+        }
+
+        .display-area {
+            width: 2060px !important;
             height: 2060px !important;
             display: block !important;
             background-color: #000000 !important;
             position: relative !important;
+            transform: scale(var(--app-scale, 1)) !important;
+            transform-origin: top center !important;
+            flex-shrink: 0 !important;
         }
 
         /* Plan A screen container */
@@ -485,7 +498,8 @@
         </div>
 
         <!-- 3画面ディスプレイ (右側) -->
-        <div class="display-area">
+        <div class="display-area-wrapper">
+            <div class="display-area">
             <div class="screen-container" id="normal-screens-container">
                 <!-- Screen 1 -->
                 <div class="screen-wrapper" id="wrapper-1">
@@ -519,12 +533,13 @@
                 <div id="duet-collage-container"></div>
             </div>
         </div>
+        </div>
     </div>
 
     <!-- 分析ダッシュボード (スクロールすると表示されるエリア) -->
     <div class="analysis-dashboard">
         <div class="dashboard-title-area">
-            <h2 class="dashboard-title">Real-Time Analysis & Execution Monitor <span style="font-size: 0.9rem; color: var(--text-muted); font-weight: normal; margin-left: 10px;">v1.10.1</span></h2>
+            <h2 class="dashboard-title">Real-Time Analysis & Execution Monitor <span style="font-size: 0.9rem; color: var(--text-muted); font-weight: normal; margin-left: 10px;">v1.10.2</span></h2>
         </div>
         
         <!-- タイムラインセクション (Agent A) -->
@@ -624,8 +639,16 @@
         
         let VIDEO_BASE_PATH = R2_BASE_URL;
         const AUDIO_BASE_PATH = isLocal ? "audios/" : R2_BASE_URL;
+
+        function updateAppScale() {
+            const scale = Math.min(1, window.innerWidth / 2060);
+            document.documentElement.style.setProperty('--app-scale', scale);
+        }
+        window.addEventListener('resize', updateAppScale);
+        window.addEventListener('DOMContentLoaded', updateAppScale);
+        updateAppScale();
     </script>
-    <script src="player.js?v=1.10.1"></script>
-    <script src="audio_trigger_logic.js?v=1.10.1"></script>
+    <script src="player.js?v=1.10.2"></script>
+    <script src="audio_trigger_logic.js?v=1.10.2"></script>
 </body>
 </html>

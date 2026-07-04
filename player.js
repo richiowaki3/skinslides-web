@@ -303,9 +303,10 @@ class VideoPlayer {
         });
     }
 
-    // レベル 1: 静かで変化が少ない（最後のフレームでフリーズして待機）
+    // レベル 1: 静かで変化が少ない（最後のフレームでフリーズして待機、途中で止めない）
     playLevel1(fileName) {
         this.stop();
+        this.isLocked = true; // ゆっくりの動画は途中で止めないロックをかける
         if (!this.mediaEl) return Promise.resolve();
 
         return new Promise((resolve) => {
@@ -330,6 +331,7 @@ class VideoPlayer {
                 this.startFreezeMonitor(fileName);
             }).catch(e => {
                 console.error(`L1再生エラー [${fileName}]:`, e);
+                this.isLocked = false;
                 resolve();
             });
 
@@ -338,6 +340,7 @@ class VideoPlayer {
                     this.mediaEl.pause();
                     this.mediaEl.removeEventListener('timeupdate', this.timeUpdateHandler);
                     this.timeUpdateHandler = null;
+                    this.isLocked = false; // 再生完了（ラストフレームフリーズ）によりアンロック
                     resolve();
                 }
             };
@@ -345,9 +348,10 @@ class VideoPlayer {
         });
     }
 
-    // レベル 2: やや動きがある（最初のフレームでフリーズ＆フェードイン、再生、最後のフレームでフリーズ＆フェードアウト）
+    // レベル 2: やや動きがある（最初のフレームでフリーズ＆フェードイン、再生、最後のフレームでフリーズ＆フェードアウト、途中で止めない）
     playLevel2(fileName, fadeTimeSec) {
         this.stop();
+        this.isLocked = true; // ゆっくりの動画は途中で止めないロックをかける
         if (!this.mediaEl) return Promise.resolve();
 
         return new Promise((resolve) => {
@@ -393,6 +397,7 @@ class VideoPlayer {
                             this.startFreezeMonitor(fileName);
                         }).catch(e => {
                             console.error(`L2再生エラー [${fileName}]:`, e);
+                            this.isLocked = false;
                             resolve();
                         });
                         
@@ -412,7 +417,7 @@ class VideoPlayer {
                                         clearInterval(this.fadeInterval);
                                         this.fadeInterval = null;
                                         
-                                        // 完全に終了
+                                        // 完全に終了 (内部の stop() が isLocked = false を実行します)
                                         this.stop();
                                     } else {
                                         this.mediaEl.style.opacity = outOpacity;
@@ -431,6 +436,7 @@ class VideoPlayer {
                 console.error(`L2ロードエラー: ${fileName}`, e);
                 this.mediaEl.removeEventListener('canplay', onCanPlay);
                 this.mediaEl.removeEventListener('error', onError);
+                this.isLocked = false;
                 resolve();
             };
             

@@ -483,6 +483,12 @@ function stopSequence() {
         playButton.style.boxShadow = "0 4px 15px rgba(0, 191, 255, 0.3)";
     }
     
+    // Clear idle timer
+    if (idleTimer) {
+        clearTimeout(idleTimer);
+        idleTimer = null;
+    }
+
     // Clear screens
     players.forEach((player, idx) => {
         player.stop();
@@ -537,6 +543,12 @@ function stopCutUpPlayback() {
         cutupButton.textContent = "Start Audio Cut-up Test";
         cutupButton.style.background = "linear-gradient(135deg, #ff7700 0%, #ff8800 100%)";
         cutupButton.style.boxShadow = "0 4px 15px rgba(255, 119, 0, 0.3)";
+    }
+    
+    // Clear idle timer
+    if (idleTimer) {
+        clearTimeout(idleTimer);
+        idleTimer = null;
     }
     
     // Stop node
@@ -1038,6 +1050,48 @@ function triggerEvent(event) {
     });
 }
 
+let idleTimer = null;
+
+function resetIdleTimer() {
+    if (idleTimer) {
+        clearTimeout(idleTimer);
+    }
+    // 21秒後に無音時自動トリガーを実行（デモ画面）
+    idleTimer = setTimeout(() => {
+        triggerIdleFallbackVideo();
+    }, 21000);
+}
+
+function triggerIdleFallbackVideo() {
+    console.log("[demo] 21 seconds of inactivity detected. Triggering idle fallback video.");
+    addDecisionLog("21s Inactivity: Triggering idle fallback video to maintain motion.", "success");
+    
+    // 現在ロックされておらず、再生中でない画面を選ぶ
+    const availableScreens = [1, 2, 3].filter(screenNum => {
+        const p = players[screenNum - 1];
+        return p && !p.isLocked;
+    });
+    
+    // すべてロックされている場合は、ランダムに画面を1つ選ぶ
+    const targetScreen = availableScreens.length > 0 
+        ? availableScreens[Math.floor(Math.random() * availableScreens.length)] 
+        : Math.floor(Math.random() * 3) + 1;
+        
+    const fallbackEvent = {
+        id: `idle_fallback_${Date.now()}`,
+        time_sec: 0,
+        type: "静寂",
+        strength: 0.1,
+        onomatopoeia: "しんしん"
+    };
+    
+    let chosenInTrigger = new Set();
+    reactScreenWithVideo(targetScreen, fallbackEvent, chosenInTrigger);
+    
+    // 再度タイマーをセット
+    resetIdleTimer();
+}
+
 // Video reaction and onomatopoeia popup logic
 function reactScreenWithVideo(screenNum, event, chosenInTrigger = new Set()) {
     const wrapper = document.getElementById(`wrapper-${screenNum}`);
@@ -1073,6 +1127,9 @@ function reactScreenWithVideo(screenNum, event, chosenInTrigger = new Set()) {
     // Select video from the corresponding pool
     const videoData = selectVideoByLevel(audioLevel, chosenInTrigger);
     if (!videoData) return;
+
+    // トリガーが成功したため、21秒の無音検出タイマーをリセット
+    resetIdleTimer();
 
     const videoFileName = videoData[0];
     chosenInTrigger.add(videoFileName);

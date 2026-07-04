@@ -266,6 +266,9 @@ function reactScreenWithVideo(screenNum, event, chosenInTrigger) {
     const videoData = selectVideoByLevel(audioLevel, chosenInTrigger);
     if (!videoData) return;
 
+    // トリガーが成功したため、21秒の無音検出タイマーをリセット
+    resetIdleTimer();
+
     const videoFileName = videoData[IDX.FNAME];
     chosenInTrigger.add(videoFileName);
 
@@ -342,6 +345,48 @@ const RARE_TRACKS = [
 let lastTrackFileName = null;
 let lastWasRare = false;
 
+let idleTimer = null;
+
+function resetIdleTimer() {
+    if (idleTimer) {
+        clearTimeout(idleTimer);
+    }
+    // 21秒後に無音時自動トリガーを実行
+    idleTimer = setTimeout(() => {
+        triggerIdleFallbackVideo();
+    }, 21000);
+}
+
+function triggerIdleFallbackVideo() {
+    console.log("[logic] 21 seconds of inactivity detected. Triggering idle fallback video.");
+    addDecisionLog("21s Inactivity: Triggering idle fallback video to maintain motion.", "success");
+    
+    // 現在ロックされておらず、再生中でない画面を選ぶ
+    const availableScreens = [1, 2, 3].filter(screenNum => {
+        const p = players[screenNum - 1];
+        return p && !p.isLocked;
+    });
+    
+    // すべてロックされている場合は、ランダムに画面を1つ選ぶ
+    const targetScreen = availableScreens.length > 0 
+        ? availableScreens[Math.floor(Math.random() * availableScreens.length)] 
+        : Math.floor(Math.random() * 3) + 1;
+        
+    const fallbackEvent = {
+        id: `idle_fallback_${Date.now()}`,
+        time_sec: 0,
+        type: "静寂",
+        strength: 0.1,
+        onomatopoeia: "しんしん"
+    };
+    
+    let chosenInTrigger = new Set();
+    reactScreenWithVideo(targetScreen, fallbackEvent, chosenInTrigger);
+    
+    // 再度タイマーをセット
+    resetIdleTimer();
+}
+
 // 音声トリガー駆動のグローバルループ
 async function runGlobalSequence() {
     console.log("[logic] Trigger-driven sequence started.");
@@ -354,6 +399,12 @@ async function runGlobalSequence() {
 
     while (true) {
         cycleCount++;
+        
+        // 新しいサイクルの開始時にタイマーを一度クリア
+        if (idleTimer) {
+            clearTimeout(idleTimer);
+            idleTimer = null;
+        }
         
         let audioFileName = "";
         let selectedTrack = null;
@@ -509,6 +560,12 @@ async function runGlobalSequence() {
 
         console.log(`--- [Cycle ${cycleCount}] Track finished ---`);
         addDecisionLog(`--- Track Finished ---`, "success");
+        
+        // トラック終了時にタイマーをクリア（次のトラックが始まるまでの3秒間の誤トリガーを防ぐ）
+        if (idleTimer) {
+            clearTimeout(idleTimer);
+            idleTimer = null;
+        }
         
         // 曲の終了後に次の曲まで3秒待機する
         await new Promise(resolve => setTimeout(resolve, 3000));

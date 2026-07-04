@@ -130,34 +130,71 @@ async function loadMetadata() {
         // ビデオのBlobプリロードを一括開始
         const preloadStatus = document.getElementById("preload-status");
         const preloadProgress = document.getElementById("preload-progress");
+        const overlayProgress = document.getElementById("overlay-preload-progress");
         const playBtn = document.getElementById("play-btn");
         const cutupBtn = document.getElementById("cutup-btn");
         
         if (preloadProgress) preloadProgress.textContent = "0% (0/18 videos)";
+        if (overlayProgress) overlayProgress.textContent = "0%";
         await window.preloadAllVideos(VIDEO_BASE_PATH, (loaded, total) => {
             const pct = Math.round((loaded / total) * 100);
             if (preloadProgress) preloadProgress.textContent = `${pct}% (${loaded}/${total} videos)`;
+            if (overlayProgress) overlayProgress.textContent = `${pct}%`;
         });
 
         // 音響のAudioBufferプリロードを一括開始
         if (preloadProgress) preloadProgress.textContent = "0% (0/38 audios)";
+        if (overlayProgress) overlayProgress.textContent = "0%";
         await preloadAllAudios(AUDIO_BASE_PATH, (loaded, total) => {
             const pct = Math.round((loaded / total) * 100);
             if (preloadProgress) preloadProgress.textContent = `${pct}% (${loaded}/${total} audios)`;
+            if (overlayProgress) overlayProgress.textContent = `${pct}%`;
         });
         
         if (preloadStatus) {
             preloadStatus.style.color = "var(--accent-green)";
             preloadProgress.textContent = "Complete!";
-            setTimeout(() => {
-                preloadStatus.style.display = "none";
-                if (playBtn) playBtn.style.display = "block"; 
-                if (cutupBtn) cutupBtn.style.display = "block"; // 準備完了後にカットアップボタンを表示！
-            }, 800);
-        } else {
-            if (playBtn) playBtn.style.display = "block";
-            if (cutupBtn) cutupBtn.style.display = "block";
         }
+        
+        if (overlayProgress) {
+            overlayProgress.textContent = "100%";
+        }
+        
+        // Hide loading progress on overlay and show launch buttons (Item 7)
+        setTimeout(() => {
+            const progressContainer = document.getElementById("overlay-progress-container");
+            const buttonsContainer = document.getElementById("overlay-buttons-container");
+            if (progressContainer) progressContainer.style.display = "none";
+            if (buttonsContainer) buttonsContainer.style.display = "flex";
+            
+            // Wire buttons (Item 7)
+            const planABtn = document.getElementById("choose-plan-a");
+            const planBBtn = document.getElementById("choose-plan-b");
+            const overlay = document.getElementById("start-overlay");
+            
+            if (planABtn) {
+                planABtn.addEventListener("click", () => {
+                    if (overlay) {
+                        overlay.style.opacity = "0";
+                        setTimeout(() => { overlay.style.display = "none"; }, 500);
+                    }
+                    if (playBtn) playBtn.style.display = "block";
+                    if (cutupBtn) cutupBtn.style.display = "block";
+                    startSequence();
+                });
+            }
+            if (planBBtn) {
+                planBBtn.addEventListener("click", () => {
+                    if (overlay) {
+                        overlay.style.opacity = "0";
+                        setTimeout(() => { overlay.style.display = "none"; }, 500);
+                    }
+                    if (playBtn) playBtn.style.display = "block";
+                    if (cutupBtn) cutupBtn.style.display = "block";
+                    startCutUpPlayback();
+                });
+            }
+        }, 500);
 
         // Hook up Video Audio Toggle
         const audioToggleBtn = document.getElementById("toggle-video-audio");
@@ -516,7 +553,7 @@ let duetState = {
 };
 
 let collageVideos = [];
-const MAX_COLLAGE_VIDEOS = 6; // 最大6枚まで重ねて蛇のような軌跡を描く
+const MAX_COLLAGE_VIDEOS = 4; // 最大6枚まで重ねて蛇のような軌跡を描く
 let collageZIndex = 1;
 let lastBox = null; // 直前に配置された動画の実際の可視バウンディングボックス
 
@@ -527,19 +564,34 @@ function resizeCollage() {
     const container = document.getElementById("duet-collage-container");
     const wrapper = document.getElementById("duet-collage-wrapper");
     if (wrapper && container) {
-        const scale = wrapper.clientWidth / 1280;
+        const scale = wrapper.clientWidth / 2060;
         container.style.transform = `scale(${scale})`;
     }
 }
 window.addEventListener("resize", resizeCollage);
 
 let isCutUpPlaying = false;
-let cutUpNode = null;
-let cutUpTimer = null;
-let cutUpVideoTimeouts = [];
-let cutUpStartTime = 0;
-let cutUpDuration = 0;
-let cutUpEvents = [];
+let selectedPlan = "A";
+let activeCollageSlots = [null, null, null, null]; // Slot mapping for SCREEN 1, 2, 3, 4 cards
+let nextSlotIndex = 0;
+
+// Agent A (Slicer) State
+let cutUpNodeA = null;
+let cutUpTimerA = null;
+let cutUpVideoTimeoutsA = [];
+let cutUpStartTimeA = 0;
+let cutUpDurationA = 0;
+let cutUpEventsA = [];
+let playbackStartTimeA = 0;
+
+// Agent B (Ambient) State
+let cutUpNodeB = null;
+let cutUpTimerB = null;
+let cutUpVideoTimeoutsB = [];
+let cutUpStartTimeB = 0;
+let cutUpDurationB = 0;
+let cutUpEventsB = [];
+let playbackStartTimeB = 0;
 
 function startCutUpPlayback() {
     initAudioContext();
@@ -551,7 +603,7 @@ function startCutUpPlayback() {
     if (cutupButton) {
         cutupButton.textContent = "Stop Cut-up Test";
         cutupButton.style.background = "linear-gradient(135deg, #ff3366 0%, #ff0055 100%)";
-        cutupButton.style.boxShadow = "0 4px 15px rgba(255, 0, 85, 0.3)";
+        cutupButton.style.boxShadow = "none";
     }
     
     // Show duet collage wrapper and hide normal screens container
@@ -564,12 +616,10 @@ function startCutUpPlayback() {
     // Clear any previous collage videos and state
     clearCollageVideos();
     lastBox = null;
+    activeCollageSlots = [null, null, null, null];
+    nextSlotIndex = 0;
     
-    duetState.activeAgent = "AgentB";
-    duetState.turnTimeElapsed = 0;
-    duetState.turnMaxDuration = 20000 + Math.random() * 15000; // 20s to 35s
-    
-    logMessage("CONTROL", "Audio Cut-up Test started");
+    logMessage("CONTROL", "Audio Cut-up Duet started (Twin-Agent Stereo Mode)");
     
     // タイムライン冒頭の黒画面を防ぐため、初期状態で全画面にLevel 1（静寂）動画をロード
     const initialQuietEvent = {
@@ -581,7 +631,10 @@ function startCutUpPlayback() {
     };
     triggerCollageVideo(initialQuietEvent);
 
-    playNextCutUpSlice();
+    // Launch both loops concurrently! (Item 5)
+    playNextCutUpSlice("AgentA");
+    playNextCutUpSlice("AgentB");
+    
     requestAnimationFrame(updateCutUpLoop);
 }
 
@@ -590,7 +643,7 @@ function stopCutUpPlayback() {
     if (cutupButton) {
         cutupButton.textContent = "Start Audio Cut-up Test";
         cutupButton.style.background = "linear-gradient(135deg, #ff7700 0%, #ff8800 100%)";
-        cutupButton.style.boxShadow = "0 4px 15px rgba(255, 119, 0, 0.3)";
+        cutupButton.style.boxShadow = "none";
     }
     
     if (activeAgentDisplay) {
@@ -605,6 +658,7 @@ function stopCutUpPlayback() {
     // Clear collage videos and state
     clearCollageVideos();
     lastBox = null;
+    activeCollageSlots = [null, null, null, null];
     
     // Clear idle timer
     if (idleTimer) {
@@ -612,21 +666,32 @@ function stopCutUpPlayback() {
         idleTimer = null;
     }
     
-    // Stop node
-    if (cutUpNode) {
-        try {
-            cutUpNode.stop();
-        } catch (e) {}
-        cutUpNode = null;
+    // Stop Slicer (A)
+    if (cutUpNodeA) {
+        try { cutUpNodeA.stop(); } catch (e) {}
+        cutUpNodeA = null;
+    }
+    // Stop Ambient (B)
+    if (cutUpNodeB) {
+        try { cutUpNodeB.stop(); } catch (e) {}
+        cutUpNodeB = null;
     }
     
-    // Clear timeouts
-    if (cutUpTimer) {
-        clearTimeout(cutUpTimer);
-        cutUpTimer = null;
+    // Clear Slicer Timer
+    if (cutUpTimerA) {
+        clearTimeout(cutUpTimerA);
+        cutUpTimerA = null;
     }
-    cutUpVideoTimeouts.forEach(t => clearTimeout(t));
-    cutUpVideoTimeouts = [];
+    // Clear Ambient Timer
+    if (cutUpTimerB) {
+        clearTimeout(cutUpTimerB);
+        cutUpTimerB = null;
+    }
+    
+    cutUpVideoTimeoutsA.forEach(t => clearTimeout(t));
+    cutUpVideoTimeoutsA = [];
+    cutUpVideoTimeoutsB.forEach(t => clearTimeout(t));
+    cutUpVideoTimeoutsB = [];
     
     // Clear screens
     players.forEach((player, idx) => {
@@ -635,15 +700,14 @@ function stopCutUpPlayback() {
         if (wrapper) wrapper.classList.remove("active");
     });
     
+    // Restore monitor UI cards to IDLE
+    updateMonitorUI();
+    
     logMessage("CONTROL", "Audio Cut-up Test stopped");
 }
 
-function playNextCutUpSlice() {
+function playNextCutUpSlice(agentId) {
     if (!isCutUpPlaying) return;
-    
-    // Clear previous timeouts
-    cutUpVideoTimeouts.forEach(t => clearTimeout(t));
-    cutUpVideoTimeouts = [];
     
     const fileKeys = Object.keys(window.audioBufferCache);
     if (fileKeys.length === 0) {
@@ -663,17 +727,6 @@ function playNextCutUpSlice() {
         return normFileId === normRandFile;
     });
     
-    // Update active agent UI display
-    if (activeAgentDisplay) {
-        if (duetState.activeAgent === "AgentA") {
-            activeAgentDisplay.textContent = "AGENT A (Slicer / Left)";
-            activeAgentDisplay.style.color = "#ff3366";
-        } else {
-            activeAgentDisplay.textContent = "AGENT B (Ambient / Right)";
-            activeAgentDisplay.style.color = "#00ffaa";
-        }
-    }
-    
     // フィボナッチ数列による再生尺（秒）の決定
     const FIBONACCI_SECS = [1, 2, 3, 5, 8, 13, 21, 34, 55, 89];
     const validFibs = FIBONACCI_SECS.filter(f => f <= audioBuffer.duration);
@@ -682,10 +735,12 @@ function playNextCutUpSlice() {
     let targetDuration = 1.0;
     const splitIndex = Math.max(1, Math.floor(validFibs.length / 2));
     
-    if (duetState.activeAgent === "AgentA") {
+    if (agentId === "AgentA") {
+        // Agent A Slicer (Short range loop sizes)
         const pool = validFibs.slice(0, Math.min(validFibs.length, splitIndex + 1));
         targetDuration = pool[Math.floor(Math.random() * pool.length)];
     } else {
+        // Agent B Ambient (Long range loop sizes)
         const pool = validFibs.slice(splitIndex);
         targetDuration = pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : validFibs[validFibs.length - 1];
     }
@@ -699,7 +754,7 @@ function playNextCutUpSlice() {
         const eventsPool = trackData.triggers.events;
         let chosenEvent = null;
         
-        if (duetState.activeAgent === "AgentA") {
+        if (agentId === "AgentA") {
             // Agent A prefers "アタック"
             const attacks = eventsPool.filter(e => e.type === "アタック");
             chosenEvent = attacks.length > 0 ? attacks[Math.floor(Math.random() * attacks.length)] : eventsPool[Math.floor(Math.random() * eventsPool.length)];
@@ -720,7 +775,7 @@ function playNextCutUpSlice() {
         events = eventsPool
             .filter(e => e.time_sec >= targetStartTime && e.time_sec <= (targetStartTime + targetDuration))
             .map((e, index) => ({
-                id: `cutup_event_${index}_${Date.now()}`,
+                id: `cutup_event_${index}_${Date.now()}_${agentId}`,
                 time_sec: e.time_sec - targetStartTime,
                 type: e.type,
                 strength: e.strength,
@@ -729,116 +784,127 @@ function playNextCutUpSlice() {
             }));
     }
     
-    cutUpStartTime = targetStartTime;
-    cutUpDuration = targetDuration;
-    cutUpEvents = events;
+    const agentLabel = agentId === "AgentA" ? "AGENT A (Slicer)" : "AGENT B (Ambient)";
+    logMessage("CUT-UP", `[${agentLabel}] Playing slice: ${randomFile} [${targetStartTime.toFixed(1)}s - ${(targetStartTime + targetDuration).toFixed(1)}s] (${targetDuration.toFixed(1)}s)`);
     
-    const agentLabel = duetState.activeAgent === "AgentA" ? "AGENT A (Slicer)" : "AGENT B (Ambient)";
-    logMessage("CUT-UP", `[${agentLabel}] Playing slice: ${randomFile} [${cutUpStartTime.toFixed(1)}s - ${(cutUpStartTime + cutUpDuration).toFixed(1)}s] (${cutUpDuration.toFixed(1)}s)`);
-    
-    // Play buffer slice
     if (audioCtx.state === 'suspended') {
         audioCtx.resume();
     }
     
-    cutUpNode = audioCtx.createBufferSource();
-    cutUpNode.buffer = audioBuffer;
+    const node = audioCtx.createBufferSource();
+    node.buffer = audioBuffer;
     
-    // Create fade-in / fade-out envelope gain to eliminate pop noise
+    // Create fade-in / fade-out envelope gain
     const sliceGain = audioCtx.createGain();
     const now = audioCtx.currentTime;
     sliceGain.gain.setValueAtTime(0, now);
     sliceGain.gain.linearRampToValueAtTime(1.0, now + 0.02); // 20ms fade-in
-    sliceGain.gain.setValueAtTime(1.0, now + cutUpDuration - 0.02);
-    sliceGain.gain.linearRampToValueAtTime(0, now + cutUpDuration); // 20ms fade-out
+    sliceGain.gain.setValueAtTime(1.0, now + targetDuration - 0.02);
+    sliceGain.gain.linearRampToValueAtTime(0, now + targetDuration); // 20ms fade-out
     
-    // Create stereo panner to spatialise Agent A (Left) and Agent B (Right)
+    // Stereo panner: Slicer -> Left, Ambient -> Right
     const panner = audioCtx.createStereoPanner ? audioCtx.createStereoPanner() : null;
     if (panner) {
-        let panVal = 0.0;
-        if (duetState.activeAgent === "AgentA") {
-            panVal = -0.5 - Math.random() * 0.3; // -0.8 to -0.5
-        } else {
-            panVal = 0.5 + Math.random() * 0.3; // 0.5 to 0.8
-        }
+        const panVal = agentId === "AgentA" ? (-0.6 - Math.random() * 0.2) : (0.6 + Math.random() * 0.2);
         panner.pan.setValueAtTime(panVal, now);
-        cutUpNode.connect(sliceGain);
+        node.connect(sliceGain);
         sliceGain.connect(panner);
         panner.connect(analyser);
     } else {
-        cutUpNode.connect(sliceGain);
+        node.connect(sliceGain);
         sliceGain.connect(analyser);
     }
     
-    // Set global variables for timeline rendering
-    window.cutUpPlaybackStartTime = Date.now();
+    node.start(0, targetStartTime, targetDuration);
     
-    cutUpNode.start(0, cutUpStartTime, cutUpDuration);
-    
-    // Schedule video triggers
-    cutUpEvents.forEach(event => {
-        const delayMs = event.time_sec * 1000;
-        const timeoutId = setTimeout(() => {
-            if (!isCutUpPlaying) return;
-            event.triggered = true;
-            
-            // Log trigger
-            logMessage("TRIGGER", `[CUT-UP - ${duetState.activeAgent}] ${event.onomatopoeia} (Type: ${event.type}, Strength: ${event.strength.toFixed(2)})`);
-            
-            // Trigger collage video (takes turn on the single frame)
-            triggerCollageVideo(event);
-        }, delayMs);
+    if (agentId === "AgentA") {
+        cutUpNodeA = node;
+        cutUpStartTimeA = targetStartTime;
+        cutUpDurationA = targetDuration;
+        cutUpEventsA = events;
+        playbackStartTimeA = Date.now();
         
-        cutUpVideoTimeouts.push(timeoutId);
-    });
-    
-    // Duet State Turn Swapping Logic
-    duetState.turnTimeElapsed += cutUpDuration * 1000;
-    if (duetState.turnTimeElapsed >= duetState.turnMaxDuration) {
-        if (duetState.activeAgent === "AgentB") {
-            duetState.activeAgent = "AgentA";
-            duetState.turnMaxDuration = 8000 + Math.random() * 7000; // Agent A (Slicer) plays for 8s to 15s
-        } else {
-            duetState.activeAgent = "AgentB";
-            duetState.turnMaxDuration = 20000 + Math.random() * 15000; // Agent B (Ambient) plays for 20s to 35s
-        }
-        duetState.turnTimeElapsed = 0;
-        logMessage("DUET", `Turn passed to ${duetState.activeAgent.toUpperCase()}!`);
+        // Update track name UI
+        const trackNameElA = document.getElementById("ana-track-name-a");
+        if (trackNameElA) trackNameElA.textContent = randomFile;
+        
+        // Clear old timeouts
+        cutUpVideoTimeoutsA.forEach(t => clearTimeout(t));
+        cutUpVideoTimeoutsA = [];
+        
+        // Schedule video triggers
+        events.forEach(event => {
+            const delayMs = event.time_sec * 1000;
+            const timeoutId = setTimeout(() => {
+                if (!isCutUpPlaying) return;
+                event.triggered = true;
+                logMessage("TRIGGER", `[AGENT A - Slicer] ${event.onomatopoeia} (Type: ${event.type}, Strength: ${event.strength.toFixed(2)})`);
+                triggerCollageVideo(event);
+            }, delayMs);
+            cutUpVideoTimeoutsA.push(timeoutId);
+        });
+        
+        // Schedule next Slicer slice
+        cutUpTimerA = setTimeout(() => {
+            if (isCutUpPlaying) playNextCutUpSlice("AgentA");
+        }, targetDuration * 1000);
+        
+    } else {
+        cutUpNodeB = node;
+        cutUpStartTimeB = targetStartTime;
+        cutUpDurationB = targetDuration;
+        cutUpEventsB = events;
+        playbackStartTimeB = Date.now();
+        
+        // Update track name UI
+        const trackNameElB = document.getElementById("ana-track-name-b");
+        if (trackNameElB) trackNameElB.textContent = randomFile;
+        
+        // Clear old timeouts
+        cutUpVideoTimeoutsB.forEach(t => clearTimeout(t));
+        cutUpVideoTimeoutsB = [];
+        
+        // Schedule video triggers
+        events.forEach(event => {
+            const delayMs = event.time_sec * 1000;
+            const timeoutId = setTimeout(() => {
+                if (!isCutUpPlaying) return;
+                event.triggered = true;
+                logMessage("TRIGGER", `[AGENT B - Ambient] ${event.onomatopoeia} (Type: ${event.type}, Strength: ${event.strength.toFixed(2)})`);
+                triggerCollageVideo(event);
+            }, delayMs);
+            cutUpVideoTimeoutsB.push(timeoutId);
+        });
+        
+        // Schedule next Ambient slice
+        cutUpTimerB = setTimeout(() => {
+            if (isCutUpPlaying) playNextCutUpSlice("AgentB");
+        }, targetDuration * 1000);
     }
-    
-    // Schedule next slice
-    cutUpTimer = setTimeout(() => {
-        if (isCutUpPlaying) {
-            playNextCutUpSlice();
-        }
-    }, cutUpDuration * 1000);
 }
 
 function updateCutUpLoop() {
     if (!isCutUpPlaying) return;
     
-    const elapsedSec = (Date.now() - window.cutUpPlaybackStartTime) / 1000;
+    const elapsedSecA = (Date.now() - playbackStartTimeA) / 1000;
+    const elapsedSecB = (Date.now() - playbackStartTimeB) / 1000;
     
-    // Update timeline Canvas
-    drawTimeline(elapsedSec, cutUpDuration, cutUpEvents);
+    // Update Agent A timeline Canvas (Item 5)
+    drawTimeline("timeline-canvas-a", elapsedSecA, cutUpDurationA, cutUpEventsA);
+    // Update Agent B timeline Canvas (Item 5)
+    drawTimeline("timeline-canvas-b", elapsedSecB, cutUpDurationB, cutUpEventsB);
     
     // Update visualizer (Spectral Monitor)
     drawVisualizer();
     
-    // Update current time display
-    if (currentTimeDisplay) {
-        currentTimeDisplay.textContent = `${elapsedSec.toFixed(1)}s / ${cutUpDuration.toFixed(1)}s`;
-    }
+    // Update current time displays in header
+    const timeElA = document.getElementById("ana-time-a");
+    const timeElB = document.getElementById("ana-time-b");
+    if (timeElA) timeElA.textContent = `${elapsedSecA.toFixed(1)}s / ${cutUpDurationA.toFixed(1)}s`;
+    if (timeElB) timeElB.textContent = `${elapsedSecB.toFixed(1)}s / ${cutUpDurationB.toFixed(1)}s`;
     
-    // Update next trigger display
-    const nextEvent = cutUpEvents.find(e => !e.triggered && e.time_sec > elapsedSec);
-    if (nextTriggerDisplay) {
-        if (nextEvent) {
-            nextTriggerDisplay.textContent = `${nextEvent.time_sec.toFixed(1)}s [${nextEvent.type}]`;
-        } else {
-            nextTriggerDisplay.textContent = "Slice ending...";
-        }
-    }
+    // Update monitor cards based on active slots (Item 6)
+    updateMonitorUI();
     
     requestAnimationFrame(updateCutUpLoop);
 }
@@ -1335,8 +1401,8 @@ if (modeSelect) {
 window.addEventListener("DOMContentLoaded", loadMetadata);
 
 // タイムライン描画 (Canvas)
-function drawTimeline(currentTime, duration, events) {
-    const canvas = document.getElementById("timeline-canvas");
+function drawTimeline(canvasId, currentTime, duration, events) {
+    const canvas = document.getElementById(canvasId);
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     
@@ -1427,12 +1493,9 @@ function drawTimeline(currentTime, duration, events) {
     ctx.fill();
 }
 
-// スクリーンステータスの更新
+// スクリーンステータスの更新 (Plan A & B shared, handles 4 cards - Item 6)
 function updateMonitorUI() {
-    players.forEach((player, index) => {
-        const screenNum = index + 1;
-        if (screenNum > 3) return; // 音声プレイヤー除外
-        
+    for (let screenNum = 1; screenNum <= 4; screenNum++) {
         const stateEl = document.getElementById(`scr${screenNum}-state`);
         const videoEl = document.getElementById(`scr${screenNum}-video`);
         const lmaEl = document.getElementById(`scr${screenNum}-lma`);
@@ -1440,63 +1503,104 @@ function updateMonitorUI() {
         const rotEl = document.getElementById(`scr${screenNum}-rot`);
         const freezeEl = document.getElementById(`scr${screenNum}-freezes`);
         
-        if (!stateEl) return;
+        if (!stateEl) continue;
         
-        // 1. 状態表示
-        let stateText = "IDLE";
-        let stateColor = "var(--text-muted)";
-        if (player.isLocked) {
-            stateText = "LOCKED (L3)";
-            stateColor = "var(--accent-blue)";
-        } else if (player.mediaEl.paused) {
-            if (player.freezeTimeout) {
-                stateText = "FREEZING";
-                stateColor = "var(--accent-orange)";
-            } else if (player.mediaEl.src && player.mediaEl.currentTime > 0) {
-                stateText = "PAUSED";
-                stateColor = "var(--accent-orange)";
+        if (isCutUpPlaying) {
+            // Plan B: Collage mode slot tracking (Item 6)
+            const slot = activeCollageSlots[screenNum - 1];
+            if (slot) {
+                stateEl.textContent = slot.dataset.state || "PLAYING";
+                stateEl.style.color = slot.dataset.state === "PLAYING" ? "var(--accent-green)" : "var(--accent-orange)";
+                videoEl.textContent = slot.dataset.fileName || "-";
+                lmaEl.textContent = `W:${slot.dataset.w} T:${slot.dataset.t} S:${slot.dataset.s} H:${slot.dataset.h}`;
+                
+                const wVal = parseFloat(slot.dataset.w) || 3.0;
+                const tVal = parseFloat(slot.dataset.t) || 3.0;
+                const hVal = parseFloat(slot.dataset.h) || 3.0;
+                const actScore = (wVal + tVal + hVal) / 3.0;
+                actEl.textContent = actScore.toFixed(2);
+                
+                rotEl.textContent = slot.dataset.rot || "-";
+                freezeEl.textContent = slot.dataset.state === "FREEZING" ? "FREEZE FRAME (END)" : "None";
             } else {
-                stateText = "IDLE";
+                stateEl.textContent = "IDLE";
+                stateEl.style.color = "var(--text-muted)";
+                videoEl.textContent = "-";
+                lmaEl.textContent = "-";
+                actEl.textContent = "-";
+                rotEl.textContent = "-";
+                freezeEl.textContent = "-";
             }
         } else {
-            stateText = "PLAYING";
-            stateColor = "var(--accent-green)";
-        }
-        stateEl.textContent = stateText;
-        stateEl.style.color = stateColor;
-        
-        // 2. メタデータ表示
-        if (player.currentVideoData) {
-            const vData = player.currentVideoData;
-            videoEl.textContent = vData[0];
-            
-            const w = vData[4];
-            const t = vData[5];
-            const s = vData[6];
-            const h = vData[7];
-            lmaEl.textContent = `W:${w} T:${t} S:${s} H:${h}`;
-            
-            const actScore = vData.activity || (w + t + h) / 3;
-            actEl.textContent = `${actScore.toFixed(2)}`;
-            
-            const rot = player.currentRotationAngle || 90;
-            const origDir = vData[3] || "S";
-            rotEl.textContent = `${rot}° / ${origDir} (Flow:${player.currentFlowDir > 0 ? "L→R" : "R→L"})`;
-            
-            const freezes = window.freezeFramesPool ? (window.freezeFramesPool[vData[0]] || []) : [];
-            if (freezes.length > 0) {
-                freezeEl.textContent = freezes.map(sec => `${(sec * 30).toFixed(0)}f (${sec.toFixed(1)}s)`).join(", ");
-            } else {
-                freezeEl.textContent = "None";
+            // Plan A: Standard 3 screens (Screen 4 stays IDLE)
+            if (screenNum > 3) {
+                stateEl.textContent = "IDLE";
+                stateEl.style.color = "var(--text-muted)";
+                videoEl.textContent = "-";
+                lmaEl.textContent = "-";
+                actEl.textContent = "-";
+                rotEl.textContent = "-";
+                freezeEl.textContent = "-";
+                continue;
             }
-        } else {
-            videoEl.textContent = "-";
-            lmaEl.textContent = "-";
-            actEl.textContent = "-";
-            rotEl.textContent = "-";
-            freezeEl.textContent = "-";
+            
+            const player = players[screenNum - 1];
+            // 1. 状態表示
+            let stateText = "IDLE";
+            let stateColor = "var(--text-muted)";
+            if (player.isLocked) {
+                stateText = "LOCKED (L3)";
+                stateColor = "var(--accent-blue)";
+            } else if (player.mediaEl.paused) {
+                if (player.freezeTimeout) {
+                    stateText = "FREEZING";
+                    stateColor = "var(--accent-orange)";
+                } else if (player.mediaEl.src && player.mediaEl.currentTime > 0) {
+                    stateText = "PAUSED";
+                    stateColor = "var(--accent-orange)";
+                } else {
+                    stateText = "IDLE";
+                }
+            } else {
+                stateText = "PLAYING";
+                stateColor = "var(--accent-green)";
+            }
+            stateEl.textContent = stateText;
+            stateEl.style.color = stateColor;
+            
+            // 2. メタデータ表示
+            if (player.currentVideoData) {
+                const vData = player.currentVideoData;
+                videoEl.textContent = vData[0];
+                
+                const w = vData[4];
+                const t = vData[5];
+                const s = vData[6];
+                const h = vData[7];
+                lmaEl.textContent = `W:${w} T:${t} S:${s} H:${h}`;
+                
+                const actScore = vData.activity || (w + t + h) / 3;
+                actEl.textContent = `${actScore.toFixed(2)}`;
+                
+                const rot = player.currentRotationAngle || 90;
+                const origDir = vData[3] || "S";
+                rotEl.textContent = `${rot}° / ${origDir} (Flow:${player.currentFlowDir > 0 ? "L→R" : "R→L"})`;
+                
+                const freezes = window.freezeFramesPool ? (window.freezeFramesPool[vData[0]] || []) : [];
+                if (freezes.length > 0) {
+                    freezeEl.textContent = freezes.map(sec => `${(sec * 30).toFixed(0)}f (${sec.toFixed(1)}s)`).join(", ");
+                } else {
+                    freezeEl.textContent = "None";
+                }
+            } else {
+                videoEl.textContent = "-";
+                lmaEl.textContent = "-";
+                actEl.textContent = "-";
+                rotEl.textContent = "-";
+                freezeEl.textContent = "-";
+            }
         }
-    });
+    }
 }
 
 // 意思決定ログに追記する関数
@@ -1518,7 +1622,7 @@ function addDecisionLog(message, type = "info") {
 }
 window.addDecisionLog = addDecisionLog; // player.jsからも呼べるようにグローバル化
 
-// Duet Collage Trigger and helper functions (Pattern B Test Only)
+// Duet Collage Trigger and helper functions (Pattern B Test Only - Pre-cropped video version)
 function triggerCollageVideo(event) {
     if (!isCutUpPlaying || !collageContainer) return;
     
@@ -1544,7 +1648,6 @@ function triggerCollageVideo(event) {
     }
     const blobUrl = window.videoBlobCache[fileName] || (VIDEO_BASE_PATH + finalFileName);
     
-    // "トリミングすると1:2 (または2:1) である。アスペクト固定でサイズを変えることができる"
     // 短辺 S をフィボナッチサイズから選択し、長辺は 2 * S とすることでアスペクト比 1:2 / 2:1 を固定する
     const S = FIB_SIZES[Math.floor(Math.random() * FIB_SIZES.length)];
     const isVertical = Math.random() < 0.5;
@@ -1555,7 +1658,7 @@ function triggerCollageVideo(event) {
     let newVTop = 0;
     let placedSuccessfully = false;
     
-    // "トリミングされた辺の隣に次の絵がでる" (一個前の動画に重ねないよう、3辺のどれかを選んで接続)
+    // 境界を 2060x2060 キャンバスに適用して接続先を計算
     if (lastBox) {
         const sides = ["top", "bottom", "left", "right"];
         const oppositeOfLast = {
@@ -1571,7 +1674,6 @@ function triggerCollageVideo(event) {
         allowedSides.sort(() => Math.random() - 0.5);
         
         for (let side of allowedSides) {
-            // 接する位置を計算し、少しのランダムなズレ（フィボナッチ数）を加える
             const shift = [-21, -13, -8, 0, 8, 13, 21][Math.floor(Math.random() * 7)];
             
             if (side === "right") {
@@ -1588,11 +1690,11 @@ function triggerCollageVideo(event) {
                 newVLeft = lastBox.vLeft + shift;
             }
             
-            // 安全領域内 (1280x720 境界内) に収まるかチェック
+            // 安全領域内 (2060x2060 境界内) に収まるかチェック
             const rightBound = newVLeft + visW;
             const bottomBound = newVTop + visH;
             
-            if (newVLeft >= 20 && rightBound <= 1260 && newVTop >= 50 && bottomBound <= 670) {
+            if (newVLeft >= 0 && rightBound <= 2060 && newVTop >= 0 && bottomBound <= 2060) {
                 placedSuccessfully = true;
                 lastBox.exitSide = side; // 新しい進行方向を exitSide に上書き記録
                 break;
@@ -1600,30 +1702,30 @@ function triggerCollageVideo(event) {
         }
     }
     
-    // 初回、または画面端に達して接続先がない場合は、「ウィンドウの辺にくっつける」ルールを適用してスタート
+    // 2060x2060 のウィンドウの辺にくっつける
     if (!placedSuccessfully) {
         const startEdge = ["left", "right", "top", "bottom"][Math.floor(Math.random() * 4)];
         if (startEdge === "left") {
-            newVLeft = 20;
-            newVTop = 50 + Math.random() * (620 - visH);
+            newVLeft = 0;
+            newVTop = Math.random() * (2060 - visH);
         } else if (startEdge === "right") {
-            newVLeft = 1260 - visW;
-            newVTop = 50 + Math.random() * (620 - visH);
+            newVLeft = 2060 - visW;
+            newVTop = Math.random() * (2060 - visH);
         } else if (startEdge === "top") {
-            newVTop = 50;
-            newVLeft = 20 + Math.random() * (1240 - visW);
+            newVTop = 0;
+            newVLeft = Math.random() * (2060 - visW);
         } else { // bottom
-            newVTop = 670 - visH;
-            newVLeft = 20 + Math.random() * (1240 - visW);
+            newVTop = 2060 - visH;
+            newVLeft = Math.random() * (2060 - visW);
         }
         lastBox = { exitSide: "start" };
     }
     
-    // ウィンドウの辺に近づいたらぴったりくっつける（スナップ処理）
-    if (Math.abs(newVLeft - 20) < 15) newVLeft = 20;
-    if (Math.abs((newVLeft + visW) - 1260) < 15) newVLeft = 1260 - visW;
-    if (Math.abs(newVTop - 50) < 15) newVTop = 50;
-    if (Math.abs((newVTop + visH) - 670) < 15) newVTop = 670 - visH;
+    // ウィンドウの辺に近づいたらぴったりくっつける（2060x2060スナップ処理）
+    if (Math.abs(newVLeft - 0) < 15) newVLeft = 0;
+    if (Math.abs((newVLeft + visW) - 2060) < 15) newVLeft = 2060 - visW;
+    if (Math.abs(newVTop - 0) < 15) newVTop = 0;
+    if (Math.abs((newVTop + visH) - 2060) < 15) newVTop = 2060 - visH;
     
     // 今回表示される可視バウンディングボックスを次回の参照用に保存
     lastBox.vLeft = newVLeft;
@@ -1642,49 +1744,55 @@ function triggerCollageVideo(event) {
     wrapperEl.style.opacity = "0"; // 映像の再生開始まで非表示にし、白い外枠フラッシュを防ぐ
     wrapperEl.style.zIndex = collageZIndex++;
     
-    // オーバーラップが明確にわかるように影とフェードトランジションを適用 (白い境界線は完全に削除)
-    wrapperEl.style.boxShadow = "0 8px 30px rgba(0,0,0,0.6)";
+    // 影エフェクトは完全に削除 (Item 2)
+    wrapperEl.style.boxShadow = "none";
     wrapperEl.style.transition = "opacity 0.4s ease";
     
     // 新しい動画エレメントを作成
     const videoEl = document.createElement("video");
     videoEl.autoplay = true;
     videoEl.playsInline = true;
-    videoEl.muted = true;
+    videoEl.muted = window.videosMuted; // 音声の状態をグローバルと同期
     videoEl.loop = false;
     videoEl.src = blobUrl;
+    
+    // 枠のサイズ（短辺 S）に合わせて音量を自動調節 (Item 3)
+    const volume = (S - 144) / (610 - 144) * 0.9 + 0.1; // 0.1 (静) 〜 1.0 (動)
+    videoEl.volume = volume * window.videoGainVolume;
     
     // "動画は自由に回転してよい" (0, 90, 180, 270度から選択)
     const ROTATIONS = [0, 90, 180, 270];
     const rot = ROTATIONS[Math.floor(Math.random() * ROTATIONS.length)];
     
-    // 横1280 × 縦720 のソースから [20, 50, 1240, 620] (2:1 アスペクト) のアクティブエリアのみを正確に切り出し、
-    // ビデオ自体の16:9比率を厳密に維持しながらラッパーサイズに合わせてスケーリングする数学的計算
-    let videoW = 0;
-    let videoH = 0;
-    
-    if (rot === 0 || rot === 180) {
-        // 横長 wrapper の場合
-        const scale = visW / 1240;
-        videoW = 1280 * scale;
-        videoH = 720 * scale;
-    } else {
-        // 縦長 wrapper の場合 (回転により映像の幅が縦に並ぶため、ラッパーの高さ visH を基準にスケーリング)
-        const scale = visH / 1240;
-        videoW = 1280 * scale;
-        videoH = 720 * scale;
+    // タイマー以外のトリガーで階調反転（強イベント強度 0.85 以上で発動 - Item 4）
+    if (event.strength >= 0.85) {
+        videoEl.style.filter = "invert(1)";
+        logMessage("SPECIAL", `Audio Peak Inversion: Triggered on strength ${event.strength.toFixed(2)}`);
     }
     
-    // 中央揃えして余白部分をラッパーの外へ隠す (クロップ処理)
-    const leftOffset = (visW - videoW) / 2;
-    const topOffset = (visH - videoH) / 2;
-    
     videoEl.style.position = "absolute";
-    videoEl.style.width = `${videoW}px`;
-    videoEl.style.height = `${videoH}px`;
-    videoEl.style.left = `${leftOffset}px`;
-    videoEl.style.top = `${topOffset}px`;
+    if (rot === 0 || rot === 180) {
+        videoEl.style.width = "100%";
+        videoEl.style.height = "100%";
+        videoEl.style.left = "0px";
+        videoEl.style.top = "0px";
+    } else {
+        // 90度または270度回転させる場合、アスペクト比の歪みを防ぐため幅と高さを入れ替えて中央配置 (Item 1)
+        videoEl.style.width = `${visH}px`;
+        videoEl.style.height = `${visW}px`;
+        videoEl.style.left = `${(visW - visH) / 2}px`;
+        videoEl.style.top = `${(visH - visW) / 2}px`;
+    }
     videoEl.style.transform = `rotate(${rot}deg)`;
+    
+    // 各スロットのステータス表示用にメタデータをセット (Item 6)
+    wrapperEl.dataset.fileName = fileName;
+    wrapperEl.dataset.w = videoData[4];
+    wrapperEl.dataset.t = videoData[5];
+    wrapperEl.dataset.s = videoData[6];
+    wrapperEl.dataset.h = videoData[7];
+    wrapperEl.dataset.rot = `${rot}° / ${videoData[3] || "S"}`;
+    wrapperEl.dataset.state = "PLAYING";
     
     // 動画の再生が始まったタイミングでラッパーを滑らかにフェードイン (空枠の白線表示を防ぐ)
     videoEl.onplaying = () => {
@@ -1696,22 +1804,33 @@ function triggerCollageVideo(event) {
     // コンテナへ追加
     collageContainer.appendChild(wrapperEl);
     
-    // 表示上限（MAX_COLLAGE_VIDEOS）に達した古い動画は、滑らかに消去
-    if (collageVideos.length >= MAX_COLLAGE_VIDEOS) {
-        const oldest = collageVideos.shift();
-        if (oldest) {
-            oldest.style.opacity = 0;
-            setTimeout(() => {
-                oldest.remove();
-            }, 500);
+    // 4スロットマッピング：空いているスロット、または最も古いスロットを押し出し (Item 6)
+    let targetIndex = activeCollageSlots.findIndex(s => s === null);
+    if (targetIndex === -1) {
+        // 空きがない場合はラウンドロビンで押し出し
+        targetIndex = nextSlotIndex;
+        nextSlotIndex = (nextSlotIndex + 1) % 4;
+        
+        // 古いラッパーをフェードアウトして除去
+        const oldWrapper = activeCollageSlots[targetIndex];
+        if (oldWrapper) {
+            oldWrapper.style.opacity = 0;
+            setTimeout(() => { oldWrapper.remove(); }, 500);
+            
+            // collageVideos からも古いものを除外
+            const vIdx = collageVideos.indexOf(oldWrapper);
+            if (vIdx > -1) collageVideos.splice(vIdx, 1);
         }
     }
     
+    activeCollageSlots[targetIndex] = wrapperEl;
     collageVideos.push(wrapperEl);
     
-    // 再生完了した動画は最後のフレームで静止
+    // 再生完了した動画は最後のフレームで静止 (ステータスをFREEZINGに切り替え)
     videoEl.onended = () => {
         videoEl.pause();
+        wrapperEl.dataset.state = "FREEZING";
+        updateMonitorUI();
     };
     
     videoEl.play().catch(e => {

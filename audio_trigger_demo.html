@@ -83,7 +83,7 @@
             padding: 24px;
             display: flex;
             flex-direction: column;
-            gap: 20px;
+            gap: 100px;
             height: fit-content;
             box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
         }
@@ -216,13 +216,13 @@
         .display-area {
             display: flex;
             flex-direction: column;
-            gap: 20px;
+            gap: 100px;
         }
 
         .screen-container {
             display: flex;
             justify-content: space-between;
-            gap: 20px;
+            gap: 100px;
             width: 100%;
         }
 
@@ -370,14 +370,14 @@
         .collage-wrapper::after {
             content: "";
             display: block;
-            padding-top: 56.25%; /* 16:9 Aspect Ratio */
+            padding-top: 100%; /* 1:1 Aspect Ratio Square */
         }
         #duet-collage-container {
             position: absolute;
             top: 0;
             left: 0;
-            width: 1280px;
-            height: 720px;
+            width: 2060px;
+            height: 2060px;
             transform-origin: top left;
             background-color: #050505;
             overflow: hidden;
@@ -537,9 +537,6 @@
             height: 140px; /* 縦幅に余裕を持たせる */
             overflow-y: auto;
             font-family: Monaco, Menlo, Consolas, monospace;
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
         }
         .log-line {
             border-bottom: 1px solid #1a1a1a;
@@ -554,9 +551,82 @@
         .log-line.info { color: var(--accent-blue); }
         .log-line.success { color: var(--accent-green); }
         .log-line.warning { color: var(--accent-orange); }
+        /* Start Overlay CSS */
+        #start-overlay {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            background: rgba(4, 4, 6, 0.98);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+            cursor: default;
+            letter-spacing: 2px;
+            font-family: Helvetica, Arial, sans-serif;
+            transition: opacity 0.5s ease;
+        }
+        .start-title {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #ffffff;
+            margin-bottom: 25px;
+            letter-spacing: 4px;
+            text-transform: lowercase;
+        }
+        .overlay-progress-container {
+            font-size: 1rem;
+            color: #ff3366;
+            font-weight: bold;
+            letter-spacing: 1px;
+            margin-bottom: 20px;
+        }
+        .overlay-buttons-container {
+            display: none; /* Hidden during load */
+            gap: 20px;
+        }
+        .overlay-btn {
+            padding: 15px 30px;
+            border: 1px solid #ffffff;
+            background: transparent;
+            color: #ffffff;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            letter-spacing: 1px;
+        }
+        .overlay-btn:hover {
+            background-color: #ffffff;
+            color: #000000;
+        }
+        .overlay-btn.plan-b {
+            border-color: var(--accent-orange);
+            color: var(--accent-orange);
+        }
+        .overlay-btn.plan-b:hover {
+            background-color: var(--accent-orange);
+            color: #000000;
+        }
     </style>
 </head>
 <body>
+    <!-- Playback Mode Selection Overlay -->
+    <div id="start-overlay">
+        <div class="start-title">skinslides</div>
+        
+        <!-- Loading Progress -->
+        <div class="overlay-progress-container" id="overlay-progress-container">
+            Preloading: <span id="overlay-preload-progress">0%</span>
+        </div>
+        
+        <!-- Launch Buttons (shown after load) -->
+        <div class="overlay-buttons-container" id="overlay-buttons-container">
+            <button class="overlay-btn plan-a" id="choose-plan-a">Click A to start the sequence.</button>
+            <button class="overlay-btn plan-b" id="choose-plan-b">Click B to start the sequence.</button>
+        </div>
+    </div>
     <header>
         <div class="brand">skinslides</div>
         <div class="badge">Audio Trigger Demo & Monitor</div>
@@ -688,17 +758,28 @@
     <!-- 分析ダッシュボード (スクロールすると表示されるエリア) -->
     <div class="analysis-dashboard">
         <div class="dashboard-title-area">
-            <h2 class="dashboard-title">Real-Time Analysis & Execution Monitor <span style="font-size: 0.9rem; color: var(--text-muted); font-weight: normal; margin-left: 10px;">v1.9.0</span></h2>
+            <h2 class="dashboard-title">Real-Time Analysis & Execution Monitor <span style="font-size: 0.9rem; color: var(--text-muted); font-weight: normal; margin-left: 10px;">v1.10.0</span></h2>
         </div>
         
-        <!-- タイムラインセクション -->
-        <div class="timeline-section">
+        <!-- タイムラインセクション (Agent A) -->
+        <div class="timeline-section" id="timeline-section-a" style="margin-bottom: 12px;">
             <div class="timeline-header">
-                <span class="timeline-track-name">Track: <span id="ana-track-name">None</span></span>
-                <span class="timeline-time">Time: <span id="ana-time">0.0s / 0.0s</span></span>
+                <span class="timeline-track-name" style="color: #ff3366; font-weight: bold;">Agent A (Slicer / Left): <span id="ana-track-name-a" style="color: var(--text-muted); font-weight: normal;">None</span></span>
+                <span class="timeline-time">Time: <span id="ana-time-a">0.0s / 0.0s</span></span>
             </div>
             <div class="timeline-canvas-wrapper">
-                <canvas id="timeline-canvas" height="80"></canvas>
+                <canvas id="timeline-canvas-a" height="60"></canvas>
+            </div>
+        </div>
+        
+        <!-- タイムラインセクション (Agent B) -->
+        <div class="timeline-section" id="timeline-section-b">
+            <div class="timeline-header">
+                <span class="timeline-track-name" style="color: #00ffaa; font-weight: bold;">Agent B (Ambient / Right): <span id="ana-track-name-b" style="color: var(--text-muted); font-weight: normal;">None</span></span>
+                <span class="timeline-time">Time: <span id="ana-time-b">0.0s / 0.0s</span></span>
+            </div>
+            <div class="timeline-canvas-wrapper">
+                <canvas id="timeline-canvas-b" height="60"></canvas>
             </div>
             <div class="timeline-legend">
                 <span class="legend-item"><span class="legend-color attack"></span>Attack (L4)</span>
@@ -746,6 +827,18 @@
                     <div class="stat-row"><span class="stat-label">Freezes:</span><span class="stat-val" id="scr3-freezes">-</span></div>
                 </div>
             </div>
+            <!-- Screen 4 Status -->
+            <div class="monitor-card" id="card-screen-4">
+                <div class="card-header">SCREEN 4</div>
+                <div class="card-body">
+                    <div class="stat-row"><span class="stat-label">State:</span><span class="stat-val" id="scr4-state">IDLE</span></div>
+                    <div class="stat-row"><span class="stat-label">Video:</span><span class="stat-val" id="scr4-video">-</span></div>
+                    <div class="stat-row"><span class="stat-label">LMA (W,T,S,H):</span><span class="stat-val" id="scr4-lma">-</span></div>
+                    <div class="stat-row"><span class="stat-label">Activity Level:</span><span class="stat-val" id="scr4-activity">-</span></div>
+                    <div class="stat-row"><span class="stat-label">Rotation / Dir:</span><span class="stat-val" id="scr4-rot">-</span></div>
+                    <div class="stat-row"><span class="stat-label">Freezes:</span><span class="stat-val" id="scr4-freezes">-</span></div>
+                </div>
+            </div>
             <!-- Decision Log Card -->
             <div class="monitor-card log-card">
                 <div class="card-header">EXECUTIVE DECISION LOG</div>
@@ -766,7 +859,7 @@
         let VIDEO_BASE_PATH = R2_BASE_URL;
         const AUDIO_BASE_PATH = isLocal ? "audios/" : R2_BASE_URL;
     </script>
-    <script src="player.js?v=1.9.0"></script>
-    <script src="audio_trigger_logic.js?v=1.9.0"></script>
+    <script src="player.js?v=1.10.0"></script>
+    <script src="audio_trigger_logic.js?v=1.10.0"></script>
 </body>
 </html>

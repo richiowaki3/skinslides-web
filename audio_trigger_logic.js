@@ -1537,12 +1537,9 @@ function triggerCollageVideo(event) {
     }
     const blobUrl = window.videoBlobCache[fileName] || (VIDEO_BASE_PATH + finalFileName);
     
-    // "動画は自由にサイズを変えてよい" (フィボナッチ数から黄金比に近似させて幅・高さを決定)
+    // "動画は自由にサイズを変えてよい" (指定サイズのトリミングのみで、アスペクトは16:9のまま変更しない)
     const W = FIB_SIZES[Math.floor(Math.random() * FIB_SIZES.length)];
-    let H = 144;
-    if (W === 233) H = 144;
-    else if (W === 377) H = 233;
-    else if (W === 610) H = 377;
+    const H = Math.round(W * 9 / 16); // 16:9 アスペクト比を厳密に維持
     
     // "動画をトリミング" (フィボナッチパーセンテージで切り抜く)
     const tCrop = FIB_CROPS[Math.floor(Math.random() * FIB_CROPS.length)];
@@ -1611,12 +1608,30 @@ function triggerCollageVideo(event) {
         }
     }
     
-    // 初回、または画面端に達して接続先がない場合は、安全領域内のランダム位置から新しく蛇の道（軌跡）をスタートする
+    // 初回、または画面端に達して接続先がない場合は、「ウィンドウの辺にくっつける」ルールを適用してスタート
     if (!placedSuccessfully) {
-        newVLeft = 20 + Math.random() * (1240 - rotVisW);
-        newVTop = 50 + Math.random() * (620 - rotVisH);
+        const startEdge = ["left", "right", "top", "bottom"][Math.floor(Math.random() * 4)];
+        if (startEdge === "left") {
+            newVLeft = 20;
+            newVTop = 50 + Math.random() * (620 - rotVisH);
+        } else if (startEdge === "right") {
+            newVLeft = 1260 - rotVisW;
+            newVTop = 50 + Math.random() * (620 - rotVisH);
+        } else if (startEdge === "top") {
+            newVTop = 50;
+            newVLeft = 20 + Math.random() * (1240 - rotVisW);
+        } else { // bottom
+            newVTop = 670 - rotVisH;
+            newVLeft = 20 + Math.random() * (1240 - rotVisW);
+        }
         lastBox = { exitSide: "start" };
     }
+    
+    // ウィンドウの辺に近づいたらぴったりくっつける（スナップ処理）
+    if (Math.abs(newVLeft - 20) < 15) newVLeft = 20;
+    if (Math.abs((newVLeft + rotVisW) - 1260) < 15) newVLeft = 1260 - rotVisW;
+    if (Math.abs(newVTop - 50) < 15) newVTop = 50;
+    if (Math.abs((newVTop + rotVisH) - 670) < 15) newVTop = 670 - rotVisH;
     
     // 今回表示される可視バウンディングボックスを次回の参照用に保存
     lastBox.vLeft = newVLeft;

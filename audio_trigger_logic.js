@@ -23,6 +23,7 @@ let flowDirection = 1; // 1: L2R, -1: R2L
 
 const audioElement = document.getElementById("audio-element");
 const playButton = document.getElementById("play-btn");
+const cutupButton = document.getElementById("cutup-btn");
 const trackSelect = document.getElementById("track-select");
 const currentTimeDisplay = document.getElementById("current-time");
 const totalTriggersDisplay = document.getElementById("total-triggers");
@@ -49,6 +50,41 @@ const RMS_HISTORY_LIMIT = 20; // 330ms history at 60fps
 let lastTriggerTimeRealtime = 0;
 let trackVocab = [];
 let trackDominantMotion = "刻み";
+
+window.audioBufferCache = {}; // filename -> AudioBuffer
+
+async function preloadAllAudios(basePath, onProgress) {
+    let loadedCount = 0;
+    const filesToLoad = Array.from(ALLOWED_TRACKS_SET).map(id => {
+        if (id.includes("scene2end")) {
+            return id.replace("scene2end", "scene2End") + ".mp3";
+        }
+        return id.toUpperCase() + ".mp3";
+    });
+    const totalCount = filesToLoad.length;
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    const tempCtx = new AudioContextClass();
+    
+    const promises = filesToLoad.map(async (file) => {
+        const url = basePath + file + (window.VIDEO_CACHE_BUST || "");
+        try {
+            const res = await fetch(url, { mode: 'cors' });
+            if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+            const arrayBuffer = await res.arrayBuffer();
+            const decoded = await tempCtx.decodeAudioData(arrayBuffer);
+            window.audioBufferCache[file] = decoded;
+        } catch (e) {
+            console.warn(`[demo] Failed to preload audio buffer for ${file}:`, e);
+        } finally {
+            loadedCount++;
+            if (onProgress) onProgress(loadedCount, totalCount);
+        }
+    });
+    
+    await Promise.all(promises);
+    await tempCtx.close();
+    console.log(`[demo] Preloaded ${Object.keys(window.audioBufferCache).length} audio buffers.`);
+}
 
 // Fetch metadata files
 async function loadMetadata() {
@@ -88,10 +124,19 @@ async function loadMetadata() {
         const preloadStatus = document.getElementById("preload-status");
         const preloadProgress = document.getElementById("preload-progress");
         const playBtn = document.getElementById("play-btn");
+        const cutupBtn = document.getElementById("cutup-btn");
         
+        if (preloadProgress) preloadProgress.textContent = "0% (0/18 videos)";
         await window.preloadAllVideos(VIDEO_BASE_PATH, (loaded, total) => {
             const pct = Math.round((loaded / total) * 100);
-            if (preloadProgress) preloadProgress.textContent = `${pct}% (${loaded}/${total})`;
+            if (preloadProgress) preloadProgress.textContent = `${pct}% (${loaded}/${total} videos)`;
+        });
+
+        // 音響のAudioBufferプリロードを一括開始
+        if (preloadProgress) preloadProgress.textContent = "0% (0/38 audios)";
+        await preloadAllAudios(AUDIO_BASE_PATH, (loaded, total) => {
+            const pct = Math.round((loaded / total) * 100);
+            if (preloadProgress) preloadProgress.textContent = `${pct}% (${loaded}/${total} audios)`;
         });
         
         if (preloadStatus) {
@@ -99,10 +144,12 @@ async function loadMetadata() {
             preloadProgress.textContent = "Complete!";
             setTimeout(() => {
                 preloadStatus.style.display = "none";
-                if (playBtn) playBtn.style.display = "block"; // 準備完了後に再生ボタンを表示！
+                if (playBtn) playBtn.style.display = "block"; 
+                if (cutupBtn) cutupBtn.style.display = "block"; // 準備完了後にカットアップボタンを表示！
             }, 800);
         } else {
             if (playBtn) playBtn.style.display = "block";
+            if (cutupBtn) cutupBtn.style.display = "block";
         }
 
         // Hook up Video Audio Toggle
@@ -145,10 +192,11 @@ async function loadMetadata() {
 
 const ALLOWED_TRACKS_SET = new Set([
     "scene2end00", "scene2end01", "scene2end02",
-    "t507", "t508", "t509", "t510", "t512", "t513", "t514", "t515", "t516", "t517", 
-    "t518", "t519", "t520", "t521", "t522", "t523", "t524", "t530", "t532", "t533", 
-    "t534", "t535", "t536", "t537", "t541", "t538", "t538_00", "t538_0", "t538_01", 
-    "t538_1", "t538_02", "t538_2"
+    "t507", "t508", "t509", "t510", "t511", "t512", "t513", "t514", "t515", "t516", "t517", 
+    "t518", "t519", "t520", "t521", "t522", "t523", "t524", "t525", "t526", "t527", 
+    "t528", "t529", "t530", "t531", "t532", "t533", "t534", "t535", "t536", "t537", 
+    "t538", "t539", "t540", "t541", "t538_00", "t538_0", "t538_01", "t538_1", 
+    "t538_02", "t538_2"
 ]);
 
 function populateTrackSelect() {
@@ -337,6 +385,16 @@ if (playButton) {
     });
 }
 
+if (cutupButton) {
+    cutupButton.addEventListener("click", () => {
+        if (isCutUpPlaying) {
+            stopCutUpPlayback();
+        } else {
+            startCutUpPlayback();
+        }
+    });
+}
+
 function initAudioContext() {
     if (audioCtx) return;
     if (!audioElement) return;
@@ -361,6 +419,10 @@ function initAudioContext() {
 
 function playSequence() {
     if (!audioElement) return;
+    
+    if (isCutUpPlaying) {
+        stopCutUpPlayback();
+    }
     
     // Initialize Web Audio Context on user interaction
     initAudioContext();
@@ -427,6 +489,243 @@ function stopSequence() {
         const wrapper = document.getElementById(`wrapper-${idx + 1}`);
         if (wrapper) wrapper.classList.remove("active");
     });
+}
+
+let isCutUpPlaying = false;
+let cutUpNode = null;
+let cutUpTimer = null;
+let cutUpVideoTimeouts = [];
+let cutUpStartTime = 0;
+let cutUpDuration = 0;
+let cutUpEvents = [];
+
+function startCutUpPlayback() {
+    initAudioContext();
+    if (isPlaying) {
+        stopSequence();
+    }
+    
+    isCutUpPlaying = true;
+    if (cutupButton) {
+        cutupButton.textContent = "Stop Cut-up Test";
+        cutupButton.style.background = "linear-gradient(135deg, #ff3366 0%, #ff0055 100%)";
+        cutupButton.style.boxShadow = "0 4px 15px rgba(255, 0, 85, 0.3)";
+    }
+    
+    logMessage("CONTROL", "Audio Cut-up Test started");
+    
+    // タイムライン冒頭の黒画面を防ぐため、初期状態で全画面にLevel 1（静寂）動画をロード
+    const initialQuietEvent = {
+        id: "initial_quiet",
+        time_sec: 0,
+        type: "静寂",
+        strength: 0.1,
+        onomatopoeia: "しんしん"
+    };
+    let startChosen = new Set();
+    [1, 2, 3].forEach(screenNum => {
+        reactScreenWithVideo(screenNum, initialQuietEvent, startChosen);
+    });
+
+    playNextCutUpSlice();
+    requestAnimationFrame(updateCutUpLoop);
+}
+
+function stopCutUpPlayback() {
+    isCutUpPlaying = false;
+    if (cutupButton) {
+        cutupButton.textContent = "Start Audio Cut-up Test";
+        cutupButton.style.background = "linear-gradient(135deg, #ff7700 0%, #ff8800 100%)";
+        cutupButton.style.boxShadow = "0 4px 15px rgba(255, 119, 0, 0.3)";
+    }
+    
+    // Stop node
+    if (cutUpNode) {
+        try {
+            cutUpNode.stop();
+        } catch (e) {}
+        cutUpNode = null;
+    }
+    
+    // Clear timeouts
+    if (cutUpTimer) {
+        clearTimeout(cutUpTimer);
+        cutUpTimer = null;
+    }
+    cutUpVideoTimeouts.forEach(t => clearTimeout(t));
+    cutUpVideoTimeouts = [];
+    
+    // Clear screens
+    players.forEach((player, idx) => {
+        player.stop();
+        const wrapper = document.getElementById(`wrapper-${idx + 1}`);
+        if (wrapper) wrapper.classList.remove("active");
+    });
+    
+    logMessage("CONTROL", "Audio Cut-up Test stopped");
+}
+
+function playNextCutUpSlice() {
+    if (!isCutUpPlaying) return;
+    
+    // Clear previous timeouts
+    cutUpVideoTimeouts.forEach(t => clearTimeout(t));
+    cutUpVideoTimeouts = [];
+    
+    const fileKeys = Object.keys(window.audioBufferCache);
+    if (fileKeys.length === 0) {
+        logMessage("ERROR", "No preloaded audio buffers found for cut-up!");
+        stopCutUpPlayback();
+        return;
+    }
+    
+    // Pick random track
+    const randomFile = fileKeys[Math.floor(Math.random() * fileKeys.length)];
+    const audioBuffer = window.audioBufferCache[randomFile];
+    
+    // Find metadata
+    const trackData = audioMetadataPool.find(t => {
+        const normFileId = t.file_id.replace(/\.(aif|aiff|mp3)$/i, '').toLowerCase();
+        const normRandFile = randomFile.replace(/\.mp3$/i, '').toLowerCase();
+        return normFileId === normRandFile;
+    });
+    
+    if (!trackData || !trackData.triggers.events || trackData.triggers.events.length === 0) {
+        // Fallback if no triggers found
+        cutUpDuration = 1.5 + Math.random() * 2.0;
+        cutUpStartTime = Math.random() * (audioBuffer.duration - cutUpDuration);
+        cutUpEvents = [];
+    } else {
+        // Pick random trigger event
+        const events = trackData.triggers.events;
+        const randomEvent = events[Math.floor(Math.random() * events.length)];
+        const eventTime = randomEvent.time_sec;
+        
+        // Decide duration based on type
+        if (randomEvent.type === "アタック") {
+            cutUpDuration = 0.8 + Math.random() * 0.7; // 0.8s - 1.5s
+        } else if (randomEvent.type === "うねり") {
+            cutUpDuration = 2.0 + Math.random() * 2.0; // 2.0s - 4.0s
+        } else {
+            cutUpDuration = 3.0 + Math.random() * 3.0; // 3.0s - 6.0s
+        }
+        
+        // Start slightly before event
+        cutUpStartTime = Math.max(0, eventTime - 0.2 - Math.random() * 0.3);
+        
+        // Check bounds
+        if (cutUpStartTime + cutUpDuration > audioBuffer.duration) {
+            cutUpStartTime = Math.max(0, audioBuffer.duration - cutUpDuration);
+        }
+        
+        // Extract events falling inside the slice
+        cutUpEvents = events
+            .filter(e => e.time_sec >= cutUpStartTime && e.time_sec <= (cutUpStartTime + cutUpDuration))
+            .map((e, index) => ({
+                id: `cutup_event_${index}_${Date.now()}`,
+                time_sec: e.time_sec - cutUpStartTime, // relative to slice start
+                type: e.type,
+                strength: e.strength,
+                onomatopoeia: e.onomatopoeia,
+                triggered: false
+            }));
+    }
+    
+    logMessage("CUT-UP", `Playing slice: ${randomFile} [${cutUpStartTime.toFixed(1)}s - ${(cutUpStartTime + cutUpDuration).toFixed(1)}s] (${cutUpDuration.toFixed(1)}s)`);
+    
+    // Play buffer slice
+    if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+    }
+    
+    cutUpNode = audioCtx.createBufferSource();
+    cutUpNode.buffer = audioBuffer;
+    
+    // Create fade-in / fade-out envelope gain to eliminate pop noise
+    const sliceGain = audioCtx.createGain();
+    const now = audioCtx.currentTime;
+    sliceGain.gain.setValueAtTime(0, now);
+    sliceGain.gain.linearRampToValueAtTime(1.0, now + 0.02); // 20ms fade-in
+    sliceGain.gain.setValueAtTime(1.0, now + cutUpDuration - 0.02);
+    sliceGain.gain.linearRampToValueAtTime(0, now + cutUpDuration); // 20ms fade-out
+    
+    cutUpNode.connect(sliceGain);
+    sliceGain.connect(analyser);
+    
+    // Set global variables for timeline rendering
+    window.cutUpPlaybackStartTime = Date.now();
+    
+    cutUpNode.start(0, cutUpStartTime, cutUpDuration);
+    
+    // Schedule video triggers
+    cutUpEvents.forEach(event => {
+        const delayMs = event.time_sec * 1000;
+        const timeoutId = setTimeout(() => {
+            if (!isCutUpPlaying) return;
+            event.triggered = true;
+            
+            // Log trigger
+            logMessage("TRIGGER", `[CUT-UP] ${event.onomatopoeia} (Type: ${event.type}, Strength: ${event.strength.toFixed(2)})`);
+            
+            // Map strength to level
+            let audioLevel = 1;
+            if (event.strength >= 0.75 || event.type === "アタック") {
+                audioLevel = 4;
+            } else if (event.strength >= 0.5) {
+                audioLevel = 3;
+            } else if (event.strength >= 0.25) {
+                audioLevel = 2;
+            }
+            
+            let numScreens = 1;
+            if (audioLevel === 4) numScreens = 3;
+            else if (audioLevel === 3) numScreens = 2;
+            
+            const screensToPlay = getScreensToPlay(numScreens);
+            let chosenInTrigger = new Set();
+            screensToPlay.forEach(screenNum => {
+                reactScreenWithVideo(screenNum, event, chosenInTrigger);
+            });
+        }, delayMs);
+        
+        cutUpVideoTimeouts.push(timeoutId);
+    });
+    
+    // Schedule next slice
+    cutUpTimer = setTimeout(() => {
+        if (isCutUpPlaying) {
+            playNextCutUpSlice();
+        }
+    }, cutUpDuration * 1000);
+}
+
+function updateCutUpLoop() {
+    if (!isCutUpPlaying) return;
+    
+    const elapsedSec = (Date.now() - window.cutUpPlaybackStartTime) / 1000;
+    
+    // Update timeline Canvas
+    drawTimeline(elapsedSec, cutUpDuration, cutUpEvents);
+    
+    // Update visualizer (Spectral Monitor)
+    drawVisualizer();
+    
+    // Update current time display
+    if (currentTimeDisplay) {
+        currentTimeDisplay.textContent = `${elapsedSec.toFixed(1)}s / ${cutUpDuration.toFixed(1)}s`;
+    }
+    
+    // Update next trigger display
+    const nextEvent = cutUpEvents.find(e => !e.triggered && e.time_sec > elapsedSec);
+    if (nextTriggerDisplay) {
+        if (nextEvent) {
+            nextTriggerDisplay.textContent = `${nextEvent.time_sec.toFixed(1)}s [${nextEvent.type}]`;
+        } else {
+            nextTriggerDisplay.textContent = "Slice ending...";
+        }
+    }
+    
+    requestAnimationFrame(updateCutUpLoop);
 }
 
 // Render Spectral Monitor Canvas

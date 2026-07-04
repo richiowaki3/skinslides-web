@@ -325,11 +325,13 @@ function reactScreenWithVideo(screenNum, event, chosenInTrigger) {
 // プレイリストのトラック定義
 const NORMAL_TRACKS = [
     "scene2End00.mp3", "scene2End01.mp3", "scene2End02.mp3",
-    "T507.mp3", "T508.mp3", "T509.mp3", "T510.mp3", "T512.mp3", 
+    "T507.mp3", "T508.mp3", "T509.mp3", "T510.mp3", "T511.mp3", "T512.mp3", 
     "T513.mp3", "T514.mp3", "T515.mp3", "T516.mp3", "T517.mp3", 
     "T518.mp3", "T519.mp3", "T520.mp3", "T521.mp3", "T522.mp3", 
-    "T523.mp3", "T524.mp3", "T530.mp3", "T532.mp3", "T533.mp3", 
-    "T534.mp3", "T535.mp3", "T536.mp3", "T537.mp3", "T541.mp3"
+    "T523.mp3", "T524.mp3", "T525.mp3", "T526.mp3", "T527.mp3", 
+    "T528.mp3", "T529.mp3", "T530.mp3", "T531.mp3", "T532.mp3", 
+    "T533.mp3", "T534.mp3", "T535.mp3", "T536.mp3", "T537.mp3", 
+    "T539.mp3", "T540.mp3", "T541.mp3"
 ];
 
 const RARE_TRACKS = [

@@ -142,20 +142,26 @@ async function initSkinslides() {
 }
 
 // 動画をActivityスコアに基づいて4レベルに分類する
+// しきい値は、音響トリガーの実データ(strength分布)がどのレベルに何%の頻度で
+// 落ちるかを実測し、その比率(L1:11%, L2:22%, L3:21%, L4:45%)に動画プールの
+// 本数比が一致するように、Weight/Time/Space/Hardnessの4軸スコアから逆算した値。
+// (旧しきい値はSpaceを score計算から除外しており、かつ絶対値固定だったため
+//  L4プールが12本しかないのに全トリガーの45%を担うという偏りが生じていた)
 function classifyVideos() {
     videoPools = { 1: [], 2: [], 3: [], 4: [] };
     metadataPool.forEach(v => {
         const weight = v[IDX.WEIGHT] || 0;
         const time = v[IDX.TIME] || 0;
-        const hardness = v[IDX.HARD] || v[IDX.HARDNESS] || 0;
-        const activity = (weight + time + hardness) / 3;
+        const space = v[IDX.SPACE] || 0;
+        const hardness = v[IDX.HARD] || 0;
+        const activity = (weight + time + space + hardness) / 4;
         v.activity = activity;
-        
-        if (activity < 1.0) {
+
+        if (activity <= 1.75) {
             videoPools[1].push(v);
-        } else if (activity < 2.5) {
+        } else if (activity <= 2.25) {
             videoPools[2].push(v);
-        } else if (activity < 4.0) {
+        } else if (activity <= 2.75) {
             videoPools[3].push(v);
         } else {
             videoPools[4].push(v);
@@ -725,10 +731,10 @@ function updateMonitorUI() {
             const w = vData[IDX.WEIGHT];
             const t = vData[IDX.TIME];
             const s = vData[IDX.SPACE];
-            const h = vData[IDX.HARD] || vData[IDX.HARDNESS] || 0;
+            const h = vData[IDX.HARD] || 0;
             lmaEl.textContent = `W:${w} T:${t} S:${s} H:${h}`;
-            
-            const actScore = vData.activity || (w + t + h) / 3;
+
+            const actScore = vData.activity !== undefined ? vData.activity : (w + t + s + h) / 4;
             actEl.textContent = `${actScore.toFixed(2)}`;
             
             const rot = player.currentRotationAngle || 90;

@@ -52,9 +52,18 @@ function wdist(a, b) {
   for (const [ax, , w] of AXES) { const d = a[ax] - b[ax]; s += w * d * d; }
   return Math.sqrt(s);
 }
+// 映像が絡む距離では Frequency(x7=音高) を無視する。映像には音高情報が無いため、
+// 速度等で代用すると「じーじー(きしみ)」と「ぬー(遅い)」のような同速・別音高を
+// 誤って揃えてしまう。音側どうしの距離(wdist)は辞書本来の10軸のまま。
+const VID_IGNORE = new Set(["x7"]);
+function wdistVid(vidVec, wordVec) {
+  let s = 0;
+  for (const [ax, , w] of AXES) { if (VID_IGNORE.has(ax)) continue; const d = vidVec[ax] - wordVec[ax]; s += w * d * d; }
+  return Math.sqrt(s);
+}
 function nearestWords(vec, k, realOnly) {
   const pool = realOnly ? words.filter(w => !w.generated) : words;
-  return pool.map(w => ({ w: w.word, d: wdist(vec, w.vec), gen: w.generated }))
+  return pool.map(w => ({ w: w.word, d: wdistVid(vec, w.vec), gen: w.generated }))
     .sort((a, b) => a.d - b.d).slice(0, k);
 }
 
@@ -113,13 +122,15 @@ function videoToVec(v) {
 
   // v2: Moisture を Hardness の鏡映から独立信号(黒い接触面積=肌の密着=ねっとり)へ変更。
   //     鏡映式は低Hardness動画30本を湿りコーナーへ固め、生成語クラスタに吸着させていた。
+  // v3: Frequency(音高)は映像から測れないため中立固定＋距離で無視(wdistVid)。
+  //     四肢オレンジ発光数は Space(空間的広がり) へ移した。
   const x1 = clamp(0.6 * W + 0.4 * (1 - vel_r) * 9);        // Weight ← 人手W + 遅さ(接地・重み)
   const x2 = clamp(0.5 * T + 0.5 * vel_r * 9);              // Time ← 運動量+人手T
-  const x3 = clamp(0.5 * S + 0.5 * ext_r * 9);              // Space ← 身体伸展+人手S
+  const x3 = clamp(0.4 * S + 0.4 * ext_r * 9 + 0.2 * limb_r * 9); // Space ← 伸展+人手S+四肢展開
   const x4 = clamp(((1 - freeze_r) * 0.5 + com_r * 0.5) * 9); // Flow ← 重心移動 vs フリーズ
   const x5 = clamp(0.5 * H + 0.5 * intens_r * 9);           // Hardness ← 最大強度+人手H
-  const x6 = clamp(contact_r * 9);                           // Moisture ← 黒い接触面積(肌の密着=ねっとり) ★独立化
-  const x7 = clamp(limb_r * 9);                               // Frequency ← 四肢(オレンジ)の細かい活動
+  const x6 = clamp(contact_r * 9);                           // Moisture ← 黒い接触面積(肌の密着=ねっとり)
+  const x7 = 4.5;                                             // Frequency ← 中立(映像は音高を判定しない)
   const x8 = clamp((freeze_r * 0.6 + intens_r * 0.4) * 9);  // Decay ← フリーズ頻度=スタッカート性
   const x9 = clamp((pchg_r * 0.6 + limbMax_r * 0.4) * 9);   // Reynolds ← 姿勢乱流+四肢分裂
   const x16 = clamp(pchg_r * 9);                              // Regularity(不規則性) ← 姿勢変化率
@@ -135,7 +146,7 @@ const videoVecs = cv2.map(v => ({
 const dists = [];
 for (let i = 0; i < videoVecs.length; i++)
   for (let j = i + 1; j < videoVecs.length; j++)
-    dists.push(wdist(videoVecs[i].vec, videoVecs[j].vec));
+    dists.push(wdistVid(videoVecs[i].vec, videoVecs[j].vec));
 dists.sort((a, b) => a - b);
 
 // ---- 検証2: 音響イベント(オノマトペ語)→最近傍動画の選択分布 ----
@@ -150,7 +161,7 @@ for (const t of meta) {
     const wv = wordVec[e.onomatopoeia];
     if (!wv) continue;
     evMatched++;
-    const near = videoVecs.map(v => ({ id: v.id, d: wdist(wv, v.vec) }))
+    const near = videoVecs.map(v => ({ id: v.id, d: wdistVid(v.vec, wv) }))
       .sort((a, b) => a.d - b.d).slice(0, K);
     const pick = near[Math.floor(Math.random() * near.length)];
     playCount[pick.id] = (playCount[pick.id] || 0) + 1;
@@ -191,7 +202,7 @@ if (process.argv.includes("--map")) {
   for (const [ax] of AXES) centroid[ax] = sample.reduce((s, v) => s + v.vec[ax], 0) / sample.length;
   console.log("画面の3動画:", sample.map(v => v.id).join(", "));
   console.log("その重心ベクトル:", Object.values(centroid).map(x => x.toFixed(1)).join(","));
-  const ranked = tracks.map(t => ({ id: t.id, d: wdist(centroid, t.vec) })).sort((a, b) => a.d - b.d);
+  const ranked = tracks.map(t => ({ id: t.id, d: wdistVid(centroid, t.vec) })).sort((a, b) => a.d - b.d);
   console.log("\n質感が近い音(継続・調和):", ranked.slice(0, 3).map(t => `${t.id}(${t.d.toFixed(1)})`).join("  "));
   console.log("質感が遠い音(対比・転換):", ranked.slice(-3).map(t => `${t.id}(${t.d.toFixed(1)})`).join("  "));
 } else {

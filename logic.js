@@ -74,6 +74,29 @@ async function initSkinslides() {
         // 3.5 フリーズフレーム情報のロード
         await window.loadFreezeFrames();
 
+        // 3.6 質感マッチング用: オノマトペ辞書＋映像解析データを読み、各動画にテクスチャベクトルを付与
+        if (USE_VECTOR_SELECT) {
+            try {
+                const fetchText = async (local) => {
+                    try { const r = await fetch(local); if (!r.ok) throw new Error(); return await r.text(); }
+                    catch (e) { const r = await fetch(R2_BASE_URL + local); return await r.text(); }
+                };
+                const fetchJson = async (local) => JSON.parse(await fetchText(local));
+                const [dictText, cv2List, mpList] = await Promise.all([
+                    fetchText('Audio%20analysis%20data/onomatopoeia_dictionary.csv'),
+                    fetchJson('Video%20analysis%20data/metadata_cv2.json'),
+                    fetchJson('Video%20analysis%20data/metadata.json'),
+                ]);
+                parseDictionaryCSV(dictText);
+                buildVideoTextureVectors(cv2List, mpList);
+                console.log(`[logic] Texture matching ready: ${Object.keys(dictWordVec).length} dict words, textureReady=${textureReady}`);
+                addDecisionLog(`Texture matching ready: ${Object.keys(dictWordVec).length} onomatopoeia words mapped.`, "success");
+            } catch (e) {
+                console.warn('[logic] Texture matching setup failed, falling back to level-pool selection.', e);
+                textureReady = false;
+            }
+        }
+
         // 4. ビデオのBlobプリロードを一括開始
         const preloadStatus = document.getElementById("preload-status");
         const preloadProgress = document.getElementById("preload-progress");
@@ -182,8 +205,148 @@ function selectVideoByLevel(level, excludeSet = new Set()) {
     if (filtered.length === 0) {
         filtered = pool; // すべて除外されている場合はプール全体から選択
     }
-    
+
     return filtered[Math.floor(Math.random() * filtered.length)];
+}
+
+// ===========================================================================
+// オノマトペ辞書共通空間による質感マッチング選択（Phase 3）
+// 音イベントのオノマトペ語→辞書10軸ベクトル＝質感ターゲット、映像を同空間へ射影し、
+// 距離に応じた確率選択 P(v) ∝ exp(-dist/T) で選ぶ。tools/vector_map_prototype.js の
+// 検証済みロジックを本番へ移植したもの。
+// ===========================================================================
+const USE_VECTOR_SELECT = true; // false で旧レベルプール選択(selectVideoByLevel)へ即戻す
+const TEXTURE_TEMP = 2.5;       // 確率選択の温度（小=質感忠実 / 大=分散）。prototypeでtop10Share約31%
+
+// 辞書の距離軸と重み（onoma_analyzer_v6.py の DIST_AXES と同一）
+const TEX_AXES = [
+    ["x1", "x1", 1.0], ["x2", "x2", 1.0], ["x3", "x3", 0.4], ["x4", "x4", 0.5],
+    ["x5", "x5", 1.0], ["x6", "x6", 0.8], ["x7", "x7_norm", 1.0], ["x8", "x8", 1.0],
+    ["x9", "x9_norm", 0.7], ["x16", "x16_regularity", 0.6],
+];
+const TEX_IGNORE = new Set(["x7"]); // 映像は音高(Frequency)を測れないため距離で無視
+let dictWordVec = {};   // オノマトペ語 -> 10軸ベクトル
+let textureReady = false;
+
+// 映像が絡む重み付き距離（Frequency無視）
+function texDistVid(vidVec, wordVec) {
+    let s = 0;
+    for (const [ax, , w] of TEX_AXES) {
+        if (TEX_IGNORE.has(ax)) continue;
+        const d = vidVec[ax] - wordVec[ax];
+        s += w * d * d;
+    }
+    return Math.sqrt(s);
+}
+
+// 辞書CSV(BOM付きUTF-8)を読み、実在/生成問わず全語のベクトルを引けるようにする
+function parseDictionaryCSV(text) {
+    if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+    const header = lines[0].split(",");
+    dictWordVec = {};
+    for (const line of lines.slice(1)) {
+        const cells = line.split(",");
+        const row = {};
+        header.forEach((h, i) => row[h] = cells[i]);
+        const vec = {};
+        let ok = true;
+        for (const [ax, col] of TEX_AXES) {
+            const v = parseFloat(row[col]);
+            if (!Number.isFinite(v)) { ok = false; break; }
+            vec[ax] = v;
+        }
+        if (ok) dictWordVec[row.word] = vec;
+    }
+}
+
+// 映像解析データ(cv2 + mediapipe + freeze)を辞書10軸へ射影し、各動画に .texVec を付与する。
+// 射影式は vector_map_prototype.js の videoToVec v3 と一致させること。
+function buildVideoTextureVectors(cv2List, mpList) {
+    const numOf = f => { const m = String(f).match(/(\d+)/); return m ? parseInt(m[1], 10) : null; };
+    const mpByNum = {}; mpList.forEach(v => mpByNum[numOf(v.id)] = v);
+    const freezeByNum = {}; // pauseTime.xml由来のフリーズ数（loadFreezeFrames済み）
+    Object.keys(window.freezeFramesPool || {}).forEach(key => {
+        const n = numOf(key); if (n != null) freezeByNum[n] = window.freezeFramesPool[key].length;
+    });
+    const cv2ByNum = {}; cv2List.forEach(v => cv2ByNum[numOf(v.id)] = v);
+
+    // 分布からp10-p90の正規化境界を作る（プロトタイプと同じ）
+    const durOf = n => (cv2ByNum[n] || {}).duration_seconds || 1;
+    const rows = metadataPool.map(v => numOf(v[IDX.FNAME])).filter(n => cv2ByNum[n]);
+    const bounds = (fn) => {
+        const arr = rows.map(fn).sort((a, b) => a - b);
+        const pc = p => { const i = (arr.length - 1) * p / 100, lo = Math.floor(i), hi = Math.ceil(i); return lo === hi ? arr[lo] : arr[lo] + (arr[hi] - arr[lo]) * (i - lo); };
+        return [pc(10), pc(90)];
+    };
+    const B = {
+        vel: bounds(n => cv2ByNum[n].avg_body_velocity_px),
+        con: bounds(n => cv2ByNum[n].avg_contact_area_px),
+        limb: bounds(n => cv2ByNum[n].avg_limb_islands),
+        limbM: bounds(n => cv2ByNum[n].max_limb_islands),
+        ext: bounds(n => (mpByNum[n] || {}).avg_extension || 0),
+        pch: bounds(n => { const m = mpByNum[n]; return m ? (m.posture_changes || []).length / durOf(n) * 60 : 0; }),
+        com: bounds(n => (mpByNum[n] || {}).com_movement || 0),
+        frz: bounds(n => (freezeByNum[n] || 0) / durOf(n) * 60),
+        int: bounds(n => (mpByNum[n] || {}).max_intensity || 0),
+    };
+    const rel = (v, [lo, hi]) => hi <= lo ? 0 : Math.max(0, Math.min(1, (v - lo) / (hi - lo)));
+    const clamp = v => Math.max(0, Math.min(9, v));
+
+    let built = 0;
+    metadataPool.forEach(v => {
+        const n = numOf(v[IDX.FNAME]);
+        const cv = cv2ByNum[n];
+        if (!cv) { v.texVec = null; return; }
+        const m = mpByNum[n] || {};
+        const vel_r = rel(cv.avg_body_velocity_px, B.vel);
+        const contact_r = rel(cv.avg_contact_area_px, B.con);
+        const limb_r = rel(cv.avg_limb_islands, B.limb);
+        const limbMax_r = rel(cv.max_limb_islands, B.limbM);
+        const ext_r = rel(m.avg_extension || 0, B.ext);
+        const pchg_r = rel((m.posture_changes || []).length / durOf(n) * 60, B.pch);
+        const com_r = rel(m.com_movement || 0, B.com);
+        const freeze_r = rel((freezeByNum[n] || 0) / durOf(n) * 60, B.frz);
+        const intens_r = rel(m.max_intensity || 0, B.int);
+        const W = v[IDX.WEIGHT] || 0, T = v[IDX.TIME] || 0, S = v[IDX.SPACE] || 0, H = v[IDX.HARD] || 0;
+        const x5 = clamp(0.5 * H + 0.5 * intens_r * 9);
+        v.texVec = {
+            x1: clamp(0.6 * W + 0.4 * (1 - vel_r) * 9),
+            x2: clamp(0.5 * T + 0.5 * vel_r * 9),
+            x3: clamp(0.4 * S + 0.4 * ext_r * 9 + 0.2 * limb_r * 9),
+            x4: clamp(((1 - freeze_r) * 0.5 + com_r * 0.5) * 9),
+            x5,
+            x6: clamp(contact_r * 9),
+            x7: 4.5,
+            x8: clamp((freeze_r * 0.6 + intens_r * 0.4) * 9),
+            x9: clamp((pchg_r * 0.6 + limbMax_r * 0.4) * 9),
+            x16: clamp(pchg_r * 9),
+        };
+        built++;
+    });
+    console.log(`[logic] Texture vectors built for ${built}/${metadataPool.length} videos.`);
+    textureReady = built > 0 && Object.keys(dictWordVec).length > 0;
+}
+
+// 質感ターゲット（イベントのオノマトペ語→辞書ベクトル）に対し確率選択で動画を選ぶ
+function selectVideoByTexture(event, excludeSet = new Set()) {
+    const target = event && event.onomatopoeia ? dictWordVec[event.onomatopoeia] : null;
+    // 語が辞書に無い/未準備なら従来のレベルプール選択へフォールバック
+    if (!textureReady || !target) return null;
+
+    let pool = metadataPool.filter(v => v.texVec && !excludeSet.has(v[IDX.FNAME]));
+    if (pool.length === 0) pool = metadataPool.filter(v => v.texVec);
+    if (pool.length === 0) return null;
+
+    // P(v) ∝ exp(-dist/T)
+    const weights = pool.map(v => Math.exp(-texDistVid(v.texVec, target) / TEXTURE_TEMP));
+    const sum = weights.reduce((a, b) => a + b, 0);
+    let r = Math.random() * sum;
+    for (let i = 0; i < pool.length; i++) {
+        r -= weights[i];
+        if (r <= 0) return pool[i];
+    }
+    return pool[pool.length - 1];
 }
 
 // フィボナッチ数列に基づくフェード時間計算
@@ -282,8 +445,14 @@ function reactScreenWithVideo(screenNum, event, chosenInTrigger) {
         return;
     }
 
-    // レベルに対応した映像を選択
-    const videoData = selectVideoByLevel(audioLevel, chosenInTrigger);
+    // 映像を選択: 質感マッチング(オノマトペ辞書空間)を優先し、不可ならレベルプールへ
+    let videoData = null;
+    if (USE_VECTOR_SELECT) {
+        videoData = selectVideoByTexture(event, chosenInTrigger);
+    }
+    if (!videoData) {
+        videoData = selectVideoByLevel(audioLevel, chosenInTrigger);
+    }
     if (!videoData) return;
 
     // トリガーが成功したため、21秒の無音検出タイマーをリセット

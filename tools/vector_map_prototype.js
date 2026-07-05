@@ -52,8 +52,9 @@ function wdist(a, b) {
   for (const [ax, , w] of AXES) { const d = a[ax] - b[ax]; s += w * d * d; }
   return Math.sqrt(s);
 }
-function nearestWords(vec, k) {
-  return words.map(w => ({ w: w.word, d: wdist(vec, w.vec) }))
+function nearestWords(vec, k, realOnly) {
+  const pool = realOnly ? words.filter(w => !w.generated) : words;
+  return pool.map(w => ({ w: w.word, d: wdist(vec, w.vec), gen: w.generated }))
     .sort((a, b) => a.d - b.d).slice(0, k);
 }
 
@@ -110,12 +111,14 @@ function videoToVec(v) {
   const intens_r = rel(m.max_intensity || 0, B.intens);
   const [W, T, S, H] = [w4[4] || 0, w4[5] || 0, w4[6] || 0, w4[7] || 0];
 
-  const x1 = clamp(0.5 * W + 0.5 * contact_r * 9);          // Weight ← 接地面積(黒)+人手W
+  // v2: Moisture を Hardness の鏡映から独立信号(黒い接触面積=肌の密着=ねっとり)へ変更。
+  //     鏡映式は低Hardness動画30本を湿りコーナーへ固め、生成語クラスタに吸着させていた。
+  const x1 = clamp(0.6 * W + 0.4 * (1 - vel_r) * 9);        // Weight ← 人手W + 遅さ(接地・重み)
   const x2 = clamp(0.5 * T + 0.5 * vel_r * 9);              // Time ← 運動量+人手T
   const x3 = clamp(0.5 * S + 0.5 * ext_r * 9);              // Space ← 身体伸展+人手S
   const x4 = clamp(((1 - freeze_r) * 0.5 + com_r * 0.5) * 9); // Flow ← 重心移動 vs フリーズ
   const x5 = clamp(0.5 * H + 0.5 * intens_r * 9);           // Hardness ← 最大強度+人手H
-  const x6 = clamp(9 - x5);                                   // Moisture ← 硬さの鏡映(音響側と同じ発想)
+  const x6 = clamp(contact_r * 9);                           // Moisture ← 黒い接触面積(肌の密着=ねっとり) ★独立化
   const x7 = clamp(limb_r * 9);                               // Frequency ← 四肢(オレンジ)の細かい活動
   const x8 = clamp((freeze_r * 0.6 + intens_r * 0.4) * 9);  // Decay ← フリーズ頻度=スタッカート性
   const x9 = clamp((pchg_r * 0.6 + limbMax_r * 0.4) * 9);   // Reynolds ← 姿勢乱流+四肢分裂
@@ -159,12 +162,38 @@ const top10 = counts.slice(0, 10).reduce((a, [, c]) => a + c, 0);
 const unused = videoVecs.filter(v => !playCount[v.id]).length;
 
 if (process.argv.includes("--map")) {
-  console.log("=== 各動画のベクトルと最近傍オノマトペ(質感語) ===");
+  console.log("=== 各動画のベクトルと最近傍オノマトペ(実在語のみ) ===");
+  console.log("軸順: W,Time,Space,Flow,Hard,Moist,Freq,Decay,Reyn,Reg");
+  let farCount = 0;
   for (const v of videoVecs) {
-    const nw = nearestWords(v.vec, 3).map(x => `${x.w}(${x.d.toFixed(1)})`).join(" ");
+    const nw = nearestWords(v.vec, 3, true); // 実在語のみ
+    const label = nw.map(x => `${x.w}(${x.d.toFixed(1)})`).join(" ");
     const vec = Object.values(v.vec).map(x => x.toFixed(0)).join(",");
-    console.log(`${v.id}  [${vec}]  in:${v.in_side} out:${v.out_side}  → ${nw}`);
+    const fit = nw[0].d <= 4 ? "  " : nw[0].d <= 6 ? " ~" : " ⚠"; // 当てはまりの目安
+    if (nw[0].d > 6) farCount++;
+    console.log(`${v.id}  [${vec}]  in:${v.in_side} out:${v.out_side} →${fit} ${label}`);
   }
+  console.log(`\n当てはまり悪(最近傍実在語 > 6.0): ${farCount}/52`);
+} else if (process.argv.includes("--v2a")) {
+  // 逆方向: いま画面に出ている映像から、質感の近い/遠いトラックを次の音として選ぶ
+  console.log("=== 逆方向: 映像→音 (同一辞書空間でのトラック選択) ===");
+  // 各トラックの代表ベクトル = full_vector_0_9 を辞書10軸へ写像
+  const trackVec = t => {
+    const fv = ((t.profile || {}).timbre || {}).full_vector_0_9;
+    if (!fv) return null;
+    return { x1: fv.Weight, x2: fv.Time, x3: fv.Space, x4: fv.Flow, x5: fv.Hardness,
+             x6: fv.Moisture, x7: fv.Frequency, x8: fv.Decay, x9: fv.Reynolds, x16: fv.Regularity };
+  };
+  const tracks = meta.map(t => ({ id: t.file_id, vec: trackVec(t) })).filter(t => t.vec);
+  // シナリオ: 3画面に出ている動画の重心から、近いトラック/遠いトラックを提示
+  const sample = [videoVecs[12], videoVecs[10], videoVecs[50]]; // 13,11,51番あたり
+  const centroid = {};
+  for (const [ax] of AXES) centroid[ax] = sample.reduce((s, v) => s + v.vec[ax], 0) / sample.length;
+  console.log("画面の3動画:", sample.map(v => v.id).join(", "));
+  console.log("その重心ベクトル:", Object.values(centroid).map(x => x.toFixed(1)).join(","));
+  const ranked = tracks.map(t => ({ id: t.id, d: wdist(centroid, t.vec) })).sort((a, b) => a.d - b.d);
+  console.log("\n質感が近い音(継続・調和):", ranked.slice(0, 3).map(t => `${t.id}(${t.d.toFixed(1)})`).join("  "));
+  console.log("質感が遠い音(対比・転換):", ranked.slice(-3).map(t => `${t.id}(${t.d.toFixed(1)})`).join("  "));
 } else {
   console.log("=== 検証1: 動画52本のマップ内分離度 ===");
   console.log("ペア距離 min:", dists[0].toFixed(2), " median:", dists[Math.floor(dists.length / 2)].toFixed(2), " max:", dists[dists.length - 1].toFixed(2));

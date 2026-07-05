@@ -53,6 +53,9 @@ async function initSkinslides() {
         metadataPool = await resWeights.json();
         console.log(`[logic] Loaded ${metadataPool.length} video metadata records.`);
 
+        // 1.5 実在する動画だけをプールに残す（欠番選択による一瞬の黒画面を防ぐ）
+        await filterAvailableVideos(VIDEO_BASE_PATH);
+
         // 2. 動画の4レベル分類
         classifyVideos();
 
@@ -108,6 +111,34 @@ async function initSkinslides() {
     } catch (e) {
         console.error("JSONの読み込みまたは初期化に失敗しました:", e);
     }
+}
+
+// 実在チェック: 各動画の再生URLをHEADで確認し、404（R2に無い欠番）をプールから除外する。
+// メタデータは81本を参照するがR2には52本しか無いため、欠番が選ばれると画面が一瞬黒くなる。
+// これを起動時に一度だけ除外して、可用な動画だけが滑らかに回るようにする。
+async function filterAvailableVideos(basePath) {
+    const results = await Promise.all(metadataPool.map(async (v) => {
+        const f = v[IDX.FNAME];
+        const match = f.match(/(\d+)\.(mov|mp4)/i);
+        const name = match ? `${match[1]}-Sss720p.mp4` : f;
+        const url = basePath + name + (window.VIDEO_CACHE_BUST || "");
+        try {
+            const res = await fetch(url, { method: 'HEAD', mode: 'cors' });
+            return res.ok ? v : null;
+        } catch (e) {
+            return null;
+        }
+    }));
+    const available = results.filter(Boolean);
+    const removed = metadataPool.length - available.length;
+    // 全滅した場合はネットワーク/CORS障害の可能性が高いので、安全側でフィルタを無効化する
+    if (available.length === 0) {
+        console.warn("[logic] Availability check returned 0 playable videos — keeping full pool (probe likely failed).");
+        return;
+    }
+    metadataPool = available;
+    console.log(`[logic] Availability filter: ${available.length} playable, ${removed} missing removed.`);
+    addDecisionLog(`Availability check: ${available.length} videos playable, ${removed} missing excluded.`, "success");
 }
 
 // 動画をActivityスコアに基づいて4レベルに分類する

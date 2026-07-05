@@ -108,6 +108,9 @@ async function loadMetadata() {
         videoMetadataPool = await resVideos.json();
         console.log(`[demo] Loaded ${videoMetadataPool.length} videos metadata.`);
 
+        // 実在する動画だけをプールに残す（欠番選択による一瞬の黒画面を防ぐ）
+        await filterAvailableVideos(VIDEO_BASE_PATH);
+
         // 動画の4レベル分類
         classifyVideos();
 
@@ -1083,6 +1086,32 @@ function updateLoop() {
     }
 
     requestAnimationFrame(updateLoop);
+}
+
+// 実在チェック: 各動画の再生URLをHEADで確認し、404（R2に無い欠番）をプールから除外する。
+// TODO: Phase1でcoreへ。logic.js の filterAvailableVideos と同一実装を保つこと。
+async function filterAvailableVideos(basePath) {
+    const results = await Promise.all(videoMetadataPool.map(async (v) => {
+        const f = v[0];
+        const match = f.match(/(\d+)\.(mov|mp4)/i);
+        const name = match ? `${match[1]}-Sss720p.mp4` : f;
+        const url = basePath + name + (window.VIDEO_CACHE_BUST || "");
+        try {
+            const res = await fetch(url, { method: 'HEAD', mode: 'cors' });
+            return res.ok ? v : null;
+        } catch (e) {
+            return null;
+        }
+    }));
+    const available = results.filter(Boolean);
+    const removed = videoMetadataPool.length - available.length;
+    if (available.length === 0) {
+        console.warn("[demo] Availability check returned 0 playable videos — keeping full pool (probe likely failed).");
+        return;
+    }
+    videoMetadataPool = available;
+    console.log(`[demo] Availability filter: ${available.length} playable, ${removed} missing removed.`);
+    if (window.addDecisionLog) window.addDecisionLog(`Availability check: ${available.length} videos playable, ${removed} missing excluded.`, "success");
 }
 
 // 動画をActivityスコアに基づいて4レベルに分類する

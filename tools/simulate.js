@@ -17,9 +17,22 @@ const fs = require("fs");
 const path = require("path");
 const ROOT = path.join(__dirname, "..");
 
-const vids = JSON.parse(fs.readFileSync(path.join(ROOT, "logic_weights.json"), "utf8"));
+const allVids = JSON.parse(fs.readFileSync(path.join(ROOT, "logic_weights.json"), "utf8"));
 const meta = JSON.parse(fs.readFileSync(path.join(ROOT, "Audio analysis data/sound_metadata.json"), "utf8"));
 const IDX = { FNAME: 0, DUR: 1, POS: 2, DIR: 3, W: 4, T: 5, S: 6, H: 7 };
+
+// Cloudflare R2 に実在する動画番号のスナップショット（2026-07-05 ブラウザHEAD調査）。
+// 本番の logic.js / audio_trigger_logic.js は起動時に HEAD で同等の除外を行う。
+// R2 のアップロード状況が変わったらこの集合を更新すること。
+const AVAILABLE_NUMS = new Set([
+  1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,
+  31,32,33,34,35,36,38,39,40,41,44,45,46,47,48,49,50,51,52,53,54,56
+]);
+// 実在する動画だけに絞る（欠番は本番でもプールから除外されるため、シミュレーションも合わせる）
+const vids = allVids.filter(v => {
+  const m = v[IDX.FNAME].match(/(\d+)\./);
+  return m ? AVAILABLE_NUMS.has(parseInt(m[1], 10)) : true;
+});
 
 const NORMAL = ["scene2End00.mp3","scene2End01.mp3","scene2End02.mp3","T510.mp3","T511.mp3","T512.mp3","T513.mp3","T514.mp3","T515.mp3","T516.mp3","T517.mp3","T518.mp3","T519.mp3","T520.mp3","T521.mp3","T522.mp3","T523.mp3","T524.mp3","T525.mp3","T526.mp3","T528.mp3","T529.mp3","T530.mp3","T531.mp3","T532.mp3","T533.mp3","T535.mp3","T536.mp3","T537.mp3","T540.mp3","T541.mp3"];
 const RARE = ["T538.mp3","T538_00.mp3","T538_0.mp3","T538_01.mp3","T538_1.mp3","T538_02.mp3","T538_2.mp3"];

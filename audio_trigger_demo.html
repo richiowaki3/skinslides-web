@@ -539,7 +539,7 @@
     <!-- 分析ダッシュボード (スクロールすると表示されるエリア) -->
     <div class="analysis-dashboard">
         <div class="dashboard-title-area">
-            <h2 class="dashboard-title">Real-Time Analysis & Execution Monitor <span style="font-size: 0.9rem; color: var(--text-muted); font-weight: normal; margin-left: 10px;">v1.10.5</span></h2>
+            <h2 class="dashboard-title">Real-Time Analysis & Execution Monitor <span style="font-size: 0.9rem; color: var(--text-muted); font-weight: normal; margin-left: 10px;">v1.10.6</span></h2>
         </div>
         
         <!-- タイムラインセクション (Agent A) -->
@@ -563,10 +563,10 @@
                 <canvas id="timeline-canvas-b" height="60"></canvas>
             </div>
             <div class="timeline-legend">
-                <span class="legend-item"><span class="legend-color attack"></span>Attack (L4)</span>
-                <span class="legend-item"><span class="legend-color swell"></span>Swell (L3)</span>
-                <span class="legend-item"><span class="legend-color roll"></span>Roll (L2)</span>
-                <span class="legend-item"><span class="legend-color quiet"></span>Quiet (L1)</span>
+                <span class="legend-item"><span class="legend-color attack"></span>L4 強 (≥0.75 / アタック)</span>
+                <span class="legend-item"><span class="legend-color swell"></span>L3 (≥0.5)</span>
+                <span class="legend-item"><span class="legend-color roll"></span>L2 (≥0.25)</span>
+                <span class="legend-item"><span class="legend-color quiet"></span>L1 静 (&lt;0.25)</span>
             </div>
         </div>
         
@@ -648,7 +648,7 @@
         window.addEventListener('DOMContentLoaded', updateAppScale);
         updateAppScale();
     </script>
-    <script src="player.js?v=1.10.5"></script>
-    <script src="audio_trigger_logic.js?v=1.10.5"></script>
+    <script src="player.js?v=1.10.6"></script>
+    <script src="audio_trigger_logic.js?v=1.10.6"></script>
 </body>
 </html>

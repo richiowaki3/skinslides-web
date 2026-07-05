@@ -25,37 +25,6 @@ async function initSkinslides() {
         new VideoPlayer("player-4", true) 
     ];
 
-    // 動画音声トグルボタンのイベントリスナー設定
-    const audioToggleBtn = document.getElementById("toggle-video-audio");
-    if (audioToggleBtn) {
-        audioToggleBtn.addEventListener("click", () => {
-            window.videosMuted = !window.videosMuted;
-            players.forEach(p => p.setMute(window.videosMuted));
-            audioToggleBtn.textContent = `Video Audio: ${window.videosMuted ? "OFF" : "ON"}`;
-            audioToggleBtn.style.borderColor = window.videosMuted ? "rgba(255,255,255,0.1)" : "#00ffaa";
-            addDecisionLog(`Video Audio toggled to: ${window.videosMuted ? "OFF (Muted)" : "ON (Unmuted)"}`, "info");
-        });
-        // 初期化状態の適用
-        audioToggleBtn.textContent = `Video Audio: ${window.videosMuted ? "OFF" : "ON"}`;
-        audioToggleBtn.style.borderColor = window.videosMuted ? "rgba(255,255,255,0.1)" : "#00ffaa";
-    }
-
-    // 動画ゲインスライダーのイベントリスナー設定
-    const gainSlider = document.getElementById("video-gain-slider");
-    const gainVal = document.getElementById("video-gain-val");
-    if (gainSlider) {
-        gainSlider.addEventListener("input", () => {
-            const val = parseFloat(gainSlider.value);
-            window.videoGainVolume = val;
-            if (gainVal) gainVal.textContent = `${val.toFixed(1)}x`;
-            players.forEach(p => p.setGain(val));
-        });
-        // 初期状態の適用
-        const initialVal = window.videoGainVolume || 1.0;
-        gainSlider.value = initialVal;
-        if (gainVal) gainVal.textContent = `${initialVal.toFixed(1)}x`;
-    }
-
     try {
         // Local videos folder auto-detection
         try {

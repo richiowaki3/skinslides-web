@@ -5,7 +5,6 @@ let audioMetadataPool = [];
 let currentTrackEvents = [];
 let triggeredEventIds = new Set();
 let isPlaying = false;
-let screenIndex = 0; // Screen rotation index
 
 // Initialize VideoPlayer instances
 const players = [
@@ -326,7 +325,6 @@ function loadTrack(fileId) {
     }));
 
     triggeredEventIds.clear();
-    screenIndex = 0;
     rmsHistory = [];
 
     // Analyze sound tendency and dynamically adjust settings
@@ -578,19 +576,11 @@ const collageContainer = document.getElementById("duet-collage-container");
 const collageWrapper = document.getElementById("duet-collage-wrapper");
 const normalScreensContainer = document.getElementById("normal-screens-container");
 
-let duetState = {
-    activeAgent: "AgentB", // Start with Agent B (Ambient)
-    turnTimeElapsed: 0,
-    turnMaxDuration: 25000
-};
-
 let collageVideos = [];
-const MAX_COLLAGE_VIDEOS = 4; // 最大6枚まで重ねて蛇のような軌跡を描く
 let collageZIndex = 1;
 let lastBox = null; // 直前に配置された動画の実際の可視バウンディングボックス
 
 const FIB_SIZES = [144, 233, 377, 610];
-const FIB_CROPS = [0, 5, 8, 13, 21]; // フィボナッチパーセンテージによるトリミング幅
 
 function resizeCollage() {
     const container = document.getElementById("duet-collage-container");
@@ -1096,24 +1086,29 @@ function updateLoop() {
 }
 
 // 動画をActivityスコアに基づいて4レベルに分類する
+// TODO: Phase1でcoreへ。しきい値・数式は logic.js の classifyVideos と一致させること。
+// Weight/Time/Space/Hardnessの4軸平均を、音響トリガーの実需要比率
+// (L1:11% L2:22% L3:21% L4:45%) に本数比が一致するよう逆算したしきい値で4分割する。
 function classifyVideos() {
     videoPools = { 1: [], 2: [], 3: [], 4: [] };
     const IDX_WEIGHT = 4;
     const IDX_TIME = 5;
+    const IDX_SPACE = 6;
     const IDX_HARDNESS = 7;
-    
+
     videoMetadataPool.forEach(v => {
         const weight = v[IDX_WEIGHT] || 0;
         const time = v[IDX_TIME] || 0;
+        const space = v[IDX_SPACE] || 0;
         const hardness = v[IDX_HARDNESS] || 0;
-        const activity = (weight + time + hardness) / 3;
+        const activity = (weight + time + space + hardness) / 4;
         v.activity = activity;
-        
-        if (activity < 1.0) {
+
+        if (activity <= 1.75) {
             videoPools[1].push(v);
-        } else if (activity < 2.5) {
+        } else if (activity <= 2.25) {
             videoPools[2].push(v);
-        } else if (activity < 4.0) {
+        } else if (activity <= 2.75) {
             videoPools[3].push(v);
         } else {
             videoPools[4].push(v);
@@ -1221,19 +1216,7 @@ function triggerEvent(event) {
         `${event.onomatopoeia} (Time: ${event.time_sec.toFixed(1)}s, Str: ${event.strength.toFixed(2)})`
     );
 
-    // Dynamic decision log
-    let tempLvl = 1;
-    if (event.strength >= 0.75 || event.type === "アタック") tempLvl = 4;
-    else if (event.strength >= 0.5) tempLvl = 3;
-    else if (event.strength >= 0.25) tempLvl = 2;
-    
-    let tempScrCount = 1;
-    if (tempLvl === 4) tempScrCount = 3;
-    else if (tempLvl === 3) tempScrCount = 2;
-
-    addDecisionLog(`AUDIO ONSET: ${event.onomatopoeia} (Time: ${event.time_sec.toFixed(1)}s, Level ${tempLvl}, Strength: ${event.strength.toFixed(2)}) -> Triggering ${tempScrCount} screens`, "warning");
-
-    // Determine the audio level
+    // Determine the audio level (レベル判定は1回だけ。numScreensとログで共用)
     let audioLevel = 1;
     if (event.strength >= 0.75 || event.type === "アタック") {
         audioLevel = 4;
@@ -1241,8 +1224,6 @@ function triggerEvent(event) {
         audioLevel = 3;
     } else if (event.strength >= 0.25) {
         audioLevel = 2;
-    } else {
-        audioLevel = 1;
     }
 
     // Determine how many screens to trigger based on audio level
@@ -1252,6 +1233,8 @@ function triggerEvent(event) {
     } else if (audioLevel === 3) {
         numScreens = 2;
     }
+
+    addDecisionLog(`AUDIO ONSET: ${event.onomatopoeia} (Time: ${event.time_sec.toFixed(1)}s, Level ${audioLevel}, Strength: ${event.strength.toFixed(2)}) -> Triggering ${numScreens} screens`, "warning");
 
     let chosenInTrigger = new Set();
 
@@ -1557,10 +1540,8 @@ function updateMonitorUI() {
                 videoEl.textContent = slot.dataset.fileName || "-";
                 lmaEl.textContent = `W:${slot.dataset.w} T:${slot.dataset.t} S:${slot.dataset.s} H:${slot.dataset.h}`;
                 
-                const wVal = parseFloat(slot.dataset.w) || 3.0;
-                const tVal = parseFloat(slot.dataset.t) || 3.0;
-                const hVal = parseFloat(slot.dataset.h) || 3.0;
-                const actScore = (wVal + tVal + hVal) / 3.0;
+                const num = x => { const n = parseFloat(x); return Number.isFinite(n) ? n : 0; };
+                const actScore = (num(slot.dataset.w) + num(slot.dataset.t) + num(slot.dataset.s) + num(slot.dataset.h)) / 4;
                 actEl.textContent = actScore.toFixed(2);
                 
                 rotEl.textContent = slot.dataset.rot || "-";
@@ -1621,8 +1602,8 @@ function updateMonitorUI() {
                 const s = vData[6];
                 const h = vData[7];
                 lmaEl.textContent = `W:${w} T:${t} S:${s} H:${h}`;
-                
-                const actScore = vData.activity || (w + t + h) / 3;
+
+                const actScore = vData.activity !== undefined ? vData.activity : (w + t + s + h) / 4;
                 actEl.textContent = `${actScore.toFixed(2)}`;
                 
                 const rot = player.currentRotationAngle || 90;
@@ -1799,7 +1780,7 @@ function triggerCollageVideo(event) {
     
     // 枠のサイズ（短辺 S）に合わせて音量を自動調節 (Item 3)
     const volume = (S - 144) / (610 - 144) * 0.9 + 0.1; // 0.1 (静) 〜 1.0 (動)
-    videoEl.volume = volume * window.videoGainVolume;
+    videoEl.volume = Math.min(1.0, volume * (window.videoGainVolume || 1.0)); // gain>1.0でのDOMException回避
     
     // "動画は自由に回転してよい" (0, 90, 180, 270度から選択)
     const ROTATIONS = [0, 90, 180, 270];

@@ -2,40 +2,45 @@ skinslides-web
 Copyright (c) 2026 Richi Owaki
 
 The source code and logic in this repository (including but not limited to
-index.html, player.js, logic.js, logic_weights.json, pauseTime.xml, and
-associated metadata files) are licensed under:
+index.html, player.js, logic.js, audio_trigger_logic.js, logic_weights.json,
+pauseTime.xml, and associated metadata files) are licensed under:
 
-Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International
-(CC BY-NC-ND 4.0)
+Creative Commons Attribution 4.0 International (CC BY 4.0)
 
 You are free to:
-  - Share — copy and redistribute the material in any medium or format,
-    for any non-commercial purpose.
+  - Share — copy and redistribute the material in any medium or format.
+  - Adapt — remix, transform, and build upon the material for any purpose,
+    even commercially.
 
-Under the following terms:
-  - Attribution — You must give appropriate credit (Richi Owaki), provide
-    a link to this license, and indicate if changes were made.
-  - NonCommercial — You may not use the material for commercial purposes.
-  - NoDerivatives — If you remix, transform, or build upon the material,
-    you may not distribute the modified material.
-  - No additional restrictions — You may not apply legal terms or
-    technological measures that legally restrict others from doing
-    anything the license permits.
+Under the following term:
+  - Attribution — You must give appropriate credit, provide a link to the
+    license, and indicate if changes were made. You may do so in any
+    reasonable manner, but not in any way that suggests the licensor
+    endorses you or your use.
+
+To attribute this work, please use the following credit:
+    System Re-engineering & AI Logic by Richi Owaki, AI Agent.
 
 This is a human-readable summary of the license. It is not a substitute
 for the full legal text, which is available at:
 
-    https://creativecommons.org/licenses/by-nc-nd/4.0/legalcode
+    https://creativecommons.org/licenses/by/4.0/legalcode
 
 In the event of any conflict between this summary and the full legal
 text at the URL above, the full legal text governs.
 
 ---
 
-IMPORTANT — Scope exclusion for media assets:
+IMPORTANT — Scope exclusion for music, visual, and performance assets:
 
-Audio and video assets used by this project (including all files that
-were formerly tracked under `audios/`, and all video files streamed from
-the Cloudflare R2 bucket referenced in this codebase) are NOT covered by
-the CC BY-NC-ND 4.0 license above. Those assets are All Rights Reserved.
-See NOTICE.md for details.
+The music, visual, and performance assets used by this project (including
+all audio files formerly tracked under `audios/`, and all video files
+streamed from the Cloudflare R2 bucket referenced in this codebase) are
+NOT covered by the CC BY 4.0 license above. Those assets are
+All Rights Reserved:
+
+    Sound: Otomo Yoshihide
+    Dance: Alessio Silvestrin
+
+Unauthorized copying, reproduction, or redistribution of the music,
+visuals, and performance assets is strictly prohibited. See NOTICE.md.

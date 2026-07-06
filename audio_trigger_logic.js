@@ -645,8 +645,9 @@ function startCutUpPlayback() {
     }
     
     // Show duet collage wrapper and hide normal screens container
-    if (collageWrapper) collageWrapper.style.display = "block";
-    if (normalScreensContainer) normalScreensContainer.style.display = "none";
+    // (screen-container の CSS は display:flex !important のため、important付きで上書きしないと隠れない)
+    if (collageWrapper) collageWrapper.style.setProperty("display", "block", "important");
+    if (normalScreensContainer) normalScreensContainer.style.setProperty("display", "none", "important");
     
     // Adjust scaling immediately
     resizeCollage();
@@ -691,8 +692,8 @@ function stopCutUpPlayback() {
     }
     
     // Hide duet collage wrapper and show normal screens container
-    if (collageWrapper) collageWrapper.style.display = "none";
-    if (normalScreensContainer) normalScreensContainer.style.display = "flex";
+    if (collageWrapper) collageWrapper.style.setProperty("display", "none", "important");
+    if (normalScreensContainer) normalScreensContainer.style.setProperty("display", "flex", "important");
     
     // Clear collage videos and state
     clearCollageVideos();

@@ -584,12 +584,15 @@ let collageZIndex = 1;
 let lastBox = null; // 直前に配置された動画の実際の可視バウンディングボックス
 
 const FIB_SIZES = [144, 233, 377, 610];
+// Plan Bコラージュのキャンバス寸法（Plan Aと同じ最大画角 3840x2160）
+const COLLAGE_W = 3840;
+const COLLAGE_H = 2160;
 
 function resizeCollage() {
     const container = document.getElementById("duet-collage-container");
     const wrapper = document.getElementById("duet-collage-wrapper");
     if (wrapper && container) {
-        const scale = wrapper.clientWidth / 2060;
+        const scale = wrapper.clientWidth / COLLAGE_W;
         container.style.transform = `scale(${scale})`;
     }
 }
@@ -1080,12 +1083,43 @@ function updateLoop() {
     }
 
     if (audioElement.ended) {
-        logMessage("SYSTEM", "Track completed.");
-        pauseSequence();
+        logMessage("SYSTEM", "Track completed. Advancing to next track...");
+        advanceToNextTrack();
         return;
     }
 
     requestAnimationFrame(updateLoop);
+}
+
+// Play A の連続再生: 曲終了後、許可トラックから前回と異なる曲を選び、3秒あけて次へ。
+// (メイン index.html の runGlobalSequence と同じく、無限に回し続ける)
+let advancingTrack = false;
+function pickNextTrackId(excludeId) {
+    const allowed = audioMetadataPool.filter(t =>
+        ALLOWED_TRACKS_SET.has(t.file_id.replace(/\.(aif|aiff|mp3)$/i, '').toLowerCase()));
+    let candidates = allowed.filter(t => t.file_id !== excludeId);
+    if (candidates.length === 0) candidates = allowed;
+    if (candidates.length === 0) return null;
+    return candidates[Math.floor(Math.random() * candidates.length)].file_id;
+}
+function advanceToNextTrack() {
+    if (advancingTrack) return;
+    advancingTrack = true;
+    const currentId = trackSelect ? trackSelect.value : null;
+    const nextId = pickNextTrackId(currentId);
+    if (!nextId) { advancingTrack = false; pauseSequence(); return; }
+    // 曲間3秒の休符（メインと同じ間合い）
+    setTimeout(() => {
+        advancingTrack = false;
+        if (!isPlaying) return; // 途中で停止された場合は何もしない
+        if (trackSelect) trackSelect.value = nextId;
+        loadTrack(nextId);
+        audioElement.play().then(() => {
+            requestAnimationFrame(updateLoop);
+        }).catch(e => {
+            console.error("[demo] Next track play failed:", e);
+        });
+    }, 3000);
 }
 
 // 実在チェック: 各動画の再生URLをHEADで確認し、404（R2に無い欠番）をプールから除外する。
@@ -1711,7 +1745,7 @@ function triggerCollageVideo(event) {
     let newVTop = 0;
     let placedSuccessfully = false;
     
-    // 境界を 2060x2060 キャンバスに適用して接続先を計算
+    // 境界を 3840x2160 キャンバスに適用して接続先を計算
     if (lastBox) {
         const sides = ["top", "bottom", "left", "right"];
         const oppositeOfLast = {
@@ -1743,19 +1777,19 @@ function triggerCollageVideo(event) {
                 newVLeft = lastBox.vLeft + shift;
             }
             
-            // 安全領域内 (2060x2060 境界内) に収まるかチェック
+            // 安全領域内 (3840x2160 境界内) に収まるかチェック
             const rightBound = newVLeft + visW;
             const bottomBound = newVTop + visH;
-            
-            if (newVLeft >= 0 && rightBound <= 2060 && newVTop >= 0 && bottomBound <= 2060) {
+
+            if (newVLeft >= 0 && rightBound <= COLLAGE_W && newVTop >= 0 && bottomBound <= COLLAGE_H) {
                 placedSuccessfully = true;
                 lastBox.exitSide = side; // 新しい進行方向を exitSide に上書き記録
                 break;
             }
         }
     }
-    
-    // 2060x2060 のウィンドウの辺にくっつける
+
+    // 3840x2160 のウィンドウの辺にくっつける
     if (!placedSuccessfully) {
         // Always start spawning from the top edge to prevent large top blank spaces (Plan B display from top)
         const startEdge = ["left", "right", "top"][Math.floor(Math.random() * 3)];
@@ -1763,20 +1797,20 @@ function triggerCollageVideo(event) {
             newVLeft = 0;
             newVTop = 0;
         } else if (startEdge === "right") {
-            newVLeft = 2060 - visW;
+            newVLeft = COLLAGE_W - visW;
             newVTop = 0;
         } else { // top
             newVTop = 0;
-            newVLeft = Math.random() * (2060 - visW);
+            newVLeft = Math.random() * (COLLAGE_W - visW);
         }
         lastBox = { exitSide: "start" };
     }
-    
-    // ウィンドウの辺に近づいたらぴったりくっつける（2060x2060スナップ処理）
+
+    // ウィンドウの辺に近づいたらぴったりくっつける（3840x2160スナップ処理）
     if (Math.abs(newVLeft - 0) < 15) newVLeft = 0;
-    if (Math.abs((newVLeft + visW) - 2060) < 15) newVLeft = 2060 - visW;
+    if (Math.abs((newVLeft + visW) - COLLAGE_W) < 15) newVLeft = COLLAGE_W - visW;
     if (Math.abs(newVTop - 0) < 15) newVTop = 0;
-    if (Math.abs((newVTop + visH) - 2060) < 15) newVTop = 2060 - visH;
+    if (Math.abs((newVTop + visH) - COLLAGE_H) < 15) newVTop = COLLAGE_H - visH;
     
     // 今回表示される可視バウンディングボックスを次回の参照用に保存
     lastBox.vLeft = newVLeft;

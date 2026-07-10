@@ -101,6 +101,41 @@
         #player-4 {
             display: none;
         }
+
+        /* ==== スマホ対応 ====
+           320:568 = 1:1.775。90度回転したvideoの実寸はwrapperの縦横入替なので、
+           --sw 1変数からwrapper/video両方を導出すればレスポンシブでも整合する */
+        /* 縦持ち: 3パネルを縦積みし、ビューポート内に収める */
+        @media (orientation: portrait) and (max-width: 768px) {
+            .screen-container {
+                flex-direction: column;
+                gap: 16px;
+            }
+            .screen-wrapper {
+                --sw: min(26vh / 1.775, 42vw);
+                width: var(--sw);
+                height: calc(var(--sw) * 1.775);
+            }
+            .screen {
+                width: calc(var(--sw) * 1.775);
+                height: var(--sw);
+            }
+        }
+        /* 小型横持ち: 横並びのまま縮小して収める */
+        @media (orientation: landscape) and (max-width: 1200px) {
+            .screen-container {
+                gap: 4vw;
+            }
+            .screen-wrapper {
+                --sw: min(20vw, 45vh / 1.775);
+                width: var(--sw);
+                height: calc(var(--sw) * 1.775);
+            }
+            .screen {
+                width: calc(var(--sw) * 1.775);
+                height: var(--sw);
+            }
+        }
         #start-overlay {
             position: fixed;
             top: 0; left: 0;
@@ -357,7 +392,7 @@
     <!-- 分析ダッシュボード (スクロールすると表示されるエリア) -->
     <div class="analysis-dashboard">
         <div class="dashboard-title-area">
-            <h2 class="dashboard-title">Real-Time Analysis & Execution Monitor <span style="font-size: 0.9rem; color: #8892b0; font-weight: normal; margin-left: 10px;">v1.11.4</span></h2>
+            <h2 class="dashboard-title">Real-Time Analysis & Execution Monitor <span style="font-size: 0.9rem; color: #8892b0; font-weight: normal; margin-left: 10px;">v1.12.0</span></h2>
         </div>
         
         <!-- タイムラインセクション -->
@@ -436,7 +471,7 @@
         let VIDEO_BASE_PATH = R2_BASE_URL;
         const AUDIO_BASE_PATH = isLocal ? "audios/" : R2_BASE_URL;
     </script>
-    <script src="player.js?v=1.11.4"></script>
-    <script src="logic.js?v=1.11.4"></script>
+    <script src="player.js?v=1.12.0"></script>
+    <script src="logic.js?v=1.12.0"></script>
 </body>
 </html>

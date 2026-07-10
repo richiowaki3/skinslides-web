@@ -158,6 +158,30 @@
             box-sizing: border-box;
         }
 
+        /* ==== 縦持ち(スマホ)時: キャンバスを縦長2160x3840に切替え、Plan Aは3パネル縦積み ==== */
+        :root.portrait .display-area-wrapper {
+            height: calc(3840px * var(--app-scale, 1)) !important;
+        }
+        :root.portrait .display-area {
+            width: 2160px !important;
+            height: 3840px !important;
+        }
+        :root.portrait .screen-container {
+            flex-direction: column !important;
+            align-items: center !important;
+            justify-content: flex-start !important;
+            height: 3840px !important;
+            padding-top: 30px !important; /* 620x1240 x3 = 3720 + gap60 + padding60 = 3840 */
+            gap: 30px !important;
+        }
+        :root.portrait .collage-wrapper,
+        :root.portrait #duet-collage-container {
+            width: 2160px !important;
+            height: 3840px !important;
+            max-width: 2160px !important;
+            max-height: 3840px !important;
+        }
+
         /* Analysis Dashboard Styles - Swiss Design / Helvetica / Sharp */
         .analysis-dashboard {
             width: 100%;
@@ -541,7 +565,7 @@
     <!-- 分析ダッシュボード (スクロールすると表示されるエリア) -->
     <div class="analysis-dashboard">
         <div class="dashboard-title-area">
-            <h2 class="dashboard-title">Real-Time Analysis & Execution Monitor <span style="font-size: 0.9rem; color: var(--text-muted); font-weight: normal; margin-left: 10px;">v1.11.4</span></h2>
+            <h2 class="dashboard-title">Real-Time Analysis & Execution Monitor <span style="font-size: 0.9rem; color: var(--text-muted); font-weight: normal; margin-left: 10px;">v1.12.0</span></h2>
         </div>
         
         <!-- タイムラインセクション (Agent A) -->
@@ -643,16 +667,24 @@
         const AUDIO_BASE_PATH = isLocal ? "audios/" : R2_BASE_URL;
 
         function updateAppScale() {
-            // 基準3840x2160。ウィンドウに合わせて縮小するが、最小1920x1080(=0.5)〜最大3840x2160(=1.0)にクランプ。
-            const fit = Math.min(window.innerWidth / 3840, window.innerHeight / 2160);
-            const scale = Math.max(0.5, Math.min(1, fit));
+            // 横持ち: 基準3840x2160（下限0.5=1920x1080は幅900px以上のデスクトップのみ適用）
+            // 縦持ち(スマホ): 基準2160x3840の縦長キャンバスに切替え、下限なしで画面内に収める
+            const isPortrait = window.innerHeight > window.innerWidth;
+            document.documentElement.classList.toggle('portrait', isPortrait);
+            let scale;
+            if (isPortrait) {
+                scale = Math.min(1, Math.min(window.innerWidth / 2160, window.innerHeight / 3840));
+            } else {
+                const fit = Math.min(window.innerWidth / 3840, window.innerHeight / 2160);
+                scale = window.innerWidth >= 900 ? Math.max(0.5, Math.min(1, fit)) : Math.min(1, fit);
+            }
             document.documentElement.style.setProperty('--app-scale', scale);
         }
         window.addEventListener('resize', updateAppScale);
         window.addEventListener('DOMContentLoaded', updateAppScale);
         updateAppScale();
     </script>
-    <script src="player.js?v=1.11.4"></script>
-    <script src="audio_trigger_logic.js?v=1.11.4"></script>
+    <script src="player.js?v=1.12.0"></script>
+    <script src="audio_trigger_logic.js?v=1.12.0"></script>
 </body>
 </html>

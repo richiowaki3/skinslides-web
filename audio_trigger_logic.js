@@ -588,11 +588,20 @@ let collageZIndex = 1;
 let lastBox = null; // 直前に配置された動画の実際の可視バウンディングボックス
 
 const FIB_SIZES = [144, 233, 377, 610];
-// Plan Bコラージュのキャンバス寸法（Plan Aと同じ最大画角 3840x2160）
-const COLLAGE_W = 3840;
-const COLLAGE_H = 2160;
+// Plan Bコラージュのキャンバス寸法。横持ちはPlan Aと同じ最大画角3840x2160、
+// 縦持ち(スマホ)は縦長2160x3840に切替（CSSの :root.portrait と対で更新される）
+let COLLAGE_W = 3840;
+let COLLAGE_H = 2160;
+
+function updateCollageDims() {
+    const isPortrait = window.innerHeight > window.innerWidth;
+    COLLAGE_W = isPortrait ? 2160 : 3840;
+    COLLAGE_H = isPortrait ? 3840 : 2160;
+}
+updateCollageDims();
 
 function resizeCollage() {
+    updateCollageDims();
     const container = document.getElementById("duet-collage-container");
     const wrapper = document.getElementById("duet-collage-wrapper");
     if (wrapper && container) {

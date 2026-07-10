@@ -535,6 +535,8 @@ function playSequence() {
 function pauseSequence() {
     if (audioElement) audioElement.pause();
     isPlaying = false;
+    // 曲間待機中の自動次曲進行をキャンセル
+    if (advanceTimeoutId) { clearTimeout(advanceTimeoutId); advanceTimeoutId = null; }
     if (playButton) {
         playButton.textContent = "Play Sequence";
         playButton.style.background = "linear-gradient(135deg, #0088ff 0%, #00bfff 100%)";
@@ -549,6 +551,8 @@ function stopSequence() {
         audioElement.currentTime = 0;
     }
     isPlaying = false;
+    // 曲間待機中の自動次曲進行をキャンセル
+    if (advanceTimeoutId) { clearTimeout(advanceTimeoutId); advanceTimeoutId = null; }
     document.body.classList.remove("is-playing");
     if (playButton) {
         playButton.textContent = "Play Sequence";
@@ -1095,6 +1099,7 @@ function updateLoop() {
 // Play A の連続再生: 曲終了後、許可トラックから前回と異なる曲を選び、3秒あけて次へ。
 // (メイン index.html の runGlobalSequence と同じく、無限に回し続ける)
 let advancingTrack = false;
+let advanceTimeoutId = null;
 function pickNextTrackId(excludeId) {
     const allowed = audioMetadataPool.filter(t =>
         ALLOWED_TRACKS_SET.has(t.file_id.replace(/\.(aif|aiff|mp3)$/i, '').toLowerCase()));
@@ -1109,16 +1114,31 @@ function advanceToNextTrack() {
     const currentId = trackSelect ? trackSelect.value : null;
     const nextId = pickNextTrackId(currentId);
     if (!nextId) { advancingTrack = false; pauseSequence(); return; }
-    // 曲間3秒の休符（メインと同じ間合い）
-    setTimeout(() => {
-        advancingTrack = false;
-        if (!isPlaying) return; // 途中で停止された場合は何もしない
-        if (trackSelect) trackSelect.value = nextId;
+    // 曲間3秒の休符（メインと同じ間合い）。ユーザー停止時にタイムアウトをキャンセル可能にする
+    advanceTimeoutId = setTimeout(() => {
+        advanceTimeoutId = null;
+        if (!isPlaying) { advancingTrack = false; return; } // 途中で停止された場合は何もしない
+        if (!trackSelect || !audioElement) { advancingTrack = false; return; }
+
+        // メタデータをチェック
+        const trackData = audioMetadataPool.find(t => t.file_id === nextId);
+        if (!trackData) {
+            console.error("[demo] Track data not found for:", nextId);
+            advancingTrack = false;
+            return;
+        }
+
+        trackSelect.value = nextId;
         loadTrack(nextId);
         audioElement.play().then(() => {
+            advancingTrack = false;
             requestAnimationFrame(updateLoop);
         }).catch(e => {
-            console.error("[demo] Next track play failed:", e);
+            console.error("[demo] Next track play failed:", nextId, e);
+            advancingTrack = false;
+            // 再生失敗時は次の曲を試す（ただし再帰を防ぐため手動で呼ぶ）
+            // 実装を簡単にするため、ここは停止とする
+            pauseSequence();
         });
     }, 3000);
 }

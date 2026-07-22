@@ -375,7 +375,7 @@
     <!-- 分析ダッシュボード (スクロールすると表示されるエリア) -->
     <div class="analysis-dashboard">
         <div class="dashboard-title-area">
-            <h2 class="dashboard-title">Real-Time Analysis & Execution Monitor <span style="font-size: 0.9rem; color: #8892b0; font-weight: normal; margin-left: 10px;">v1.12.1</span></h2>
+            <h2 class="dashboard-title">Real-Time Analysis & Execution Monitor <span style="font-size: 0.9rem; color: #8892b0; font-weight: normal; margin-left: 10px;">v1.12.2</span></h2>
         </div>
         
         <!-- タイムラインセクション -->
@@ -450,11 +450,15 @@
     <script>
         const R2_BASE_URL = 'https://pub-b863fe2ba58a4525be0263e22ceb85a5.r2.dev/';
         const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-        
+
         let VIDEO_BASE_PATH = R2_BASE_URL;
         const AUDIO_BASE_PATH = isLocal ? "audios/" : R2_BASE_URL;
+
+        // 動画画質サフィックス: 起動時に detectVideoQuality() が回線速度で上書きする。
+        // 通常版 = Sss720p (NN-Sss720p.mp4) / 縮小版 = Sss360p (NN-Sss360p.mp4)
+        window.VIDEO_QUALITY_SUFFIX = 'Sss720p';
     </script>
-    <script src="player.js?v=1.12.1"></script>
-    <script src="logic.js?v=1.12.1"></script>
+    <script src="player.js?v=1.12.2"></script>
+    <script src="logic.js?v=1.12.2"></script>
 </body>
 </html>

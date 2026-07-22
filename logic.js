@@ -53,6 +53,9 @@ async function initSkinslides() {
         metadataPool = await resWeights.json();
         console.log(`[logic] Loaded ${metadataPool.length} video metadata records.`);
 
+        // 1.4 ネットワーク速度に応じて動画画質(通常720p / 縮小360p)を選択
+        await detectVideoQuality(VIDEO_BASE_PATH);
+
         // 1.5 実在する動画だけをプールに残す（欠番選択による一瞬の黒画面を防ぐ）
         await filterAvailableVideos(VIDEO_BASE_PATH);
 
@@ -136,6 +139,52 @@ async function initSkinslides() {
     }
 }
 
+// ネットワーク速度を判定し、通常版(720p)か縮小版(360p)かを決める。
+// 縮小版がサーバーに存在しない場合は自動で通常版へフォールバックするので、
+// 360pをまだアップロードしていなくても安全に動作する。
+const HIGH_QUALITY_SUFFIX = "Sss720p";
+const LOW_QUALITY_SUFFIX = "Sss360p";
+const LOW_DOWNLINK_MBPS = 5;   // navigator.connection.downlink がこれ未満なら縮小版
+const LOW_PROBE_MBPS = 8;      // 実測スループットがこれ未満なら縮小版
+async function detectVideoQuality(basePath) {
+    let choice = "high";
+    const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    if (conn && (conn.effectiveType || typeof conn.downlink === "number")) {
+        // 1) Network Information API（Chrome/Edge/Android）
+        const et = conn.effectiveType;
+        const down = conn.downlink;
+        if (et === "slow-2g" || et === "2g" || et === "3g") choice = "low";
+        else if (typeof down === "number" && down > 0 && down < LOW_DOWNLINK_MBPS) choice = "low";
+        console.log(`[logic] navigator.connection: effectiveType=${et}, downlink=${down}Mbps -> ${choice}`);
+    } else {
+        // 2) 非対応ブラウザ(Safari等): 動画先頭~600KBを実測してスループット判定
+        try {
+            const testUrl = basePath + `01-${HIGH_QUALITY_SUFFIX}.mp4` + (window.VIDEO_CACHE_BUST || "");
+            const t0 = performance.now();
+            const res = await fetch(testUrl, { headers: { Range: "bytes=0-614399" }, mode: "cors" });
+            const buf = await res.arrayBuffer();
+            const sec = (performance.now() - t0) / 1000;
+            const mbps = sec > 0 ? (buf.byteLength * 8 / 1e6) / sec : 999;
+            choice = mbps < LOW_PROBE_MBPS ? "low" : "high";
+            console.log(`[logic] Bandwidth probe: ${mbps.toFixed(1)}Mbps -> ${choice}`);
+        } catch (e) {
+            console.warn("[logic] Bandwidth probe failed, defaulting to high quality.", e);
+        }
+    }
+    // 3) 縮小版が実在するか確認（無ければ通常版へフォールバック）
+    if (choice === "low") {
+        try {
+            const r = await fetch(basePath + `01-${LOW_QUALITY_SUFFIX}.mp4` + (window.VIDEO_CACHE_BUST || ""), { method: "HEAD", mode: "cors" });
+            if (!r.ok) { console.warn(`[logic] ${LOW_QUALITY_SUFFIX} assets not found — using ${HIGH_QUALITY_SUFFIX}.`); choice = "high"; }
+        } catch (e) {
+            console.warn(`[logic] ${LOW_QUALITY_SUFFIX} existence check failed — using ${HIGH_QUALITY_SUFFIX}.`); choice = "high";
+        }
+    }
+    window.VIDEO_QUALITY_SUFFIX = choice === "low" ? LOW_QUALITY_SUFFIX : HIGH_QUALITY_SUFFIX;
+    console.log(`[logic] Video quality: ${choice} (${window.VIDEO_QUALITY_SUFFIX})`);
+    if (window.addDecisionLog) addDecisionLog(`Network quality: ${choice.toUpperCase()} → downloading ${window.VIDEO_QUALITY_SUFFIX} videos.`, "success");
+}
+
 // 実在チェック: 各動画の再生URLをHEADで確認し、404（R2に無い欠番）をプールから除外する。
 // メタデータは81本を参照するがR2には52本しか無いため、欠番が選ばれると画面が一瞬黒くなる。
 // これを起動時に一度だけ除外して、可用な動画だけが滑らかに回るようにする。
@@ -143,7 +192,7 @@ async function filterAvailableVideos(basePath) {
     const results = await Promise.all(metadataPool.map(async (v) => {
         const f = v[IDX.FNAME];
         const match = f.match(/(\d+)\.(mov|mp4)/i);
-        const name = match ? `${match[1]}-Sss720p.mp4` : f;
+        const name = match ? `${match[1]}-${window.VIDEO_QUALITY_SUFFIX || "Sss720p"}.mp4` : f;
         const url = basePath + name + (window.VIDEO_CACHE_BUST || "");
         try {
             const res = await fetch(url, { method: 'HEAD', mode: 'cors' });

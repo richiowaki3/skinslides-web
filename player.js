@@ -69,7 +69,7 @@ window.preloadAllVideos = async function(basePath, onProgress) {
         let finalFileName = file;
         const match = file.match(/(\d+)\.(mov|mp4)/i);
         if (match) {
-            finalFileName = `${match[1]}-Sss720p.mp4`;
+            finalFileName = `${match[1]}-${window.VIDEO_QUALITY_SUFFIX || "Sss720p"}.mp4`;
         }
         const url = basePath + finalFileName + (window.VIDEO_CACHE_BUST || "");
         
@@ -274,7 +274,7 @@ class VideoPlayer {
             if (!this.isHiddenAudioOnly) {
                 const match = fileName.match(/(\d+)\.(mov|mp4)/i);
                 if (match) {
-                    finalFileName = `${match[1]}-Sss720p.mp4`;
+                    finalFileName = `${match[1]}-${window.VIDEO_QUALITY_SUFFIX || "Sss720p"}.mp4`;
                 }
             }
             
@@ -323,7 +323,7 @@ class VideoPlayer {
             let finalFileName = fileName;
             const match = fileName.match(/(\d+)\.(mov|mp4)/i);
             if (match) {
-                finalFileName = `${match[1]}-Sss720p.mp4`;
+                finalFileName = `${match[1]}-${window.VIDEO_QUALITY_SUFFIX || "Sss720p"}.mp4`;
             }
             
             const basePath = VIDEO_BASE_PATH;
@@ -368,7 +368,7 @@ class VideoPlayer {
             let finalFileName = fileName;
             const match = fileName.match(/(\d+)\.(mov|mp4)/i);
             if (match) {
-                finalFileName = `${match[1]}-Sss720p.mp4`;
+                finalFileName = `${match[1]}-${window.VIDEO_QUALITY_SUFFIX || "Sss720p"}.mp4`;
             }
             
             const basePath = VIDEO_BASE_PATH;
@@ -466,7 +466,7 @@ class VideoPlayer {
             let finalFileName = fileName;
             const match = fileName.match(/(\d+)\.(mov|mp4)/i);
             if (match) {
-                finalFileName = `${match[1]}-Sss720p.mp4`;
+                finalFileName = `${match[1]}-${window.VIDEO_QUALITY_SUFFIX || "Sss720p"}.mp4`;
             }
             
             const basePath = VIDEO_BASE_PATH;
@@ -511,7 +511,7 @@ class VideoPlayer {
             let finalFileName = fileName;
             const match = fileName.match(/(\d+)\.(mov|mp4)/i);
             if (match) {
-                finalFileName = `${match[1]}-Sss720p.mp4`;
+                finalFileName = `${match[1]}-${window.VIDEO_QUALITY_SUFFIX || "Sss720p"}.mp4`;
             }
             
             const basePath = VIDEO_BASE_PATH;

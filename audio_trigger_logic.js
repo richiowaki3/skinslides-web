@@ -193,9 +193,26 @@ async function loadMetadata() {
             const planABtn = document.getElementById("choose-plan-a");
             const planBBtn = document.getElementById("choose-plan-b");
             const overlay = document.getElementById("start-overlay");
-            
+
+            // 本番(index.html): 起動ボタンは1つだけで、押したら Combination を開始する。
+            // テストページ(audio_trigger_demo.html)にはこのボタンが無いので何も起きない。
+            const mainBtn = document.getElementById("start-btn-el");
+            if (mainBtn) {
+                mainBtn.style.display = "block";
+                mainBtn.addEventListener("click", () => {
+                    if (overlay) {
+                        overlay.style.opacity = "0";
+                        setTimeout(() => { overlay.style.display = "none"; }, 500);
+                    }
+                    startCombination();
+                }, { once: true });
+            }
+
             if (planABtn) {
                 planABtn.addEventListener("click", () => {
+                    // Play A はコンバート対象外。従来の 3840x2160 枠のまま動かす。
+                    document.body.classList.add("plan-a");
+                    if (window.updateAppScale) window.updateAppScale();
                     if (overlay) {
                         overlay.style.opacity = "0";
                         setTimeout(() => { overlay.style.display = "none"; }, 500);
@@ -386,6 +403,10 @@ function loadTrack(fileId) {
 
     addDecisionLog(`--- Loaded track: ${mp3FileName} ---`, "success");
 
+    // ライブマップ: 読み込んだトラックを点灯させる。これまで Play B の cut-up 経路でしか
+    // 呼ばれておらず、test-level2 / special ではマップが暗いままだった。
+    if (window.LexMap) LexMap.setTrack("A", mp3FileName);
+
     // Prepare events
     currentTrackEvents = trackData.triggers.events.map((e, index) => ({
         id: `${fileId}_event_${index}`,
@@ -561,9 +582,10 @@ function playSequence() {
         }
     }
     
-    // Hide timeline track B for simple single track display (Item 3)
+    // UI統一: 音声レーンBは常時表示(シーン遷移でダッシュボードの高さが跳ねないように)。
+    // Play A のみ従来どおり1レーン表示(コンバート対象外・現状維持)。
     const sectionB = document.getElementById("timeline-section-b");
-    if (sectionB) sectionB.style.display = "none";
+    if (sectionB) sectionB.style.display = document.body.classList.contains("plan-a") ? "none" : "block";
     
     // Initialize Web Audio Context on user interaction
     initAudioContext();
@@ -659,15 +681,77 @@ let collageVideos = [];
 let collageZIndex = 1;
 let lastBox = null; // 直前に配置された動画の実際の可視バウンディングボックス
 
-const FIB_SIZES = [144, 233, 377, 610];
-// Plan Bコラージュのキャンバス寸法（Plan Aと同じ最大画角 3840x2160・向き固定）
-const COLLAGE_W = 3840;
-const COLLAGE_H = 2160;
+// 統一サイズ梯子（全シーン共通・約0.618倍ずつの6段）。
+// Play B のタイルも test-level2 のパイプカードもこの梯子の中でリサイズされる。
+const SIZE_LADDER = [
+    { w: 1240, h: 620 }, { w: 766, h: 383 }, { w: 474, h: 237 },
+    { w: 293, h: 146 },  { w: 181, h: 90 },  { w: 112, h: 56 },
+];
+// Plan Bコラージュのキャンバス寸法（基本画角 16:9 / 最大 1920x1080）
+const COLLAGE_W = 1920;
+const COLLAGE_H = 1080;
+
+/* ── コラージュの詰まり具合 ──────────────────────────────────────────
+ * 「一瞬で消える」は素材の尺が短いからではなく、押し出しが早すぎるために
+ * 起きていた(素材は最短4.8秒・中央値36.9秒)。さらに、枠は opacity:0 で
+ * 挿入され onplaying で初めて表示されるため、表示される前に押し出されると
+ * 一度も絵が出ない = 「絵が出ていない状態」になっていた。
+ * → 枠ごとに最低滞在時間を持たせ、それを過ぎた枠から押し出す。
+ * ------------------------------------------------------------------ */
+// 実測: オンセットは中央値 5.36/秒、A/B 両系統が走るので約 10.7/秒。従来は全オンセットが
+// 無条件に発火しており、4枠では1枚あたり約0.37秒しか生きられなかった。ブラウザが再生を
+// 開始する前に押し出されるため、一度も絵が出ない枠が大量に発生していた。
+// 枠を増やすだけでは足りない(10秒滞在には108枠必要)ため、発火自体を間引く。
+//   実効滞在 ≈ COLLAGE_SLOTS × COLLAGE_MIN_GAP_MS
+const COLLAGE_SLOTS = 6;            // 同時表示数(従来4枠の1.5倍)
+const COLLAGE_MIN_GAP_MS = 250;     // 通常イベントの最小発火間隔(軽い debounce)
+const COLLAGE_STRONG_GAP_MS = 120;  // 強いイベント(アタック)は詰めて出してよい
+let lastCollageSpawnAt = 0;
+// 最低滞在は6秒だが、枠が即座に再利用されるとは限らないため実効滞在の中央値は
+// 約10〜11秒になる(実オンセット列でのシミュレーション実測)。
+const COLLAGE_DWELL_MS = 6000;      // 通常の最低滞在
+const COLLAGE_FLASH_MS = 1200;      // 「一瞬で消える」枠の滞在
+const COLLAGE_FLASH_RATE = 0.30;    // 一瞬になる割合(実効の一瞬率は約11%に落ち着く)
+const COLLAGE_STUCK_MS = 3000;      // 読み込みが詰まった枠を諦めるまでの上限
+
+// この枠を押し出してよくなる時刻。まだ一度も映っていない枠は絵が出るまで待つ。
+function collageEvictableAt(w) {
+    if (!w) return 0;
+    if (w.dataset.state === "FREEZING") return 0;     // 再生し終えた枠はいつでも押し出せる
+    if (!w._shownAt) return w._bornAt + COLLAGE_STUCK_MS;
+    return w._shownAt + w._dwellMs;
+}
+
+// コラージュ用の素材選択。約10秒の尺を厚めにするが、除外はしない(全52本が出うる)。
+// Play A 側の selectVideoByLevel は従来のまま(凍結中のため触らない)。
+const COLLAGE_TARGET_SEC = 10;
+function selectCollageVideo(level, excludeSet = new Set()) {
+    const pool = videoPools[level];
+    if (!pool || !pool.length) return selectVideoByLevel(level, excludeSet);
+    let filtered = pool.filter(v => !excludeSet.has(v[0]));
+    if (!filtered.length) filtered = pool;
+    let total = 0;
+    const ws = filtered.map(v => {
+        const sec = parseFloat(v[1]) || 0;
+        // 10秒でピーク、離れるほど 0.35 へなだらかに落とす(対数距離のガウス)。
+        // さらに短尺(8秒未満)は減衰させる。短い素材は再生し終えて静止画になり、
+        // 次のトリガーで即押し出されるため「一瞬で消える」側に寄ってしまうため。
+        const r = sec > 0 ? Math.log(sec / COLLAGE_TARGET_SEC) : 0;
+        const w = (0.35 + Math.exp(-(r * r) / 1.2)) * Math.pow(Math.min(1, sec / 10), 2);
+        total += w;
+        return w;
+    });
+    let t = Math.random() * total;
+    for (let i = 0; i < filtered.length; i++) { t -= ws[i]; if (t <= 0) return filtered[i]; }
+    return filtered[filtered.length - 1];
+}
 
 function resizeCollage() {
     const container = document.getElementById("duet-collage-container");
     const wrapper = document.getElementById("duet-collage-wrapper");
-    if (wrapper && container) {
+    // 非表示中は clientWidth が 0 になり scale(0) を書き込んでコラージュを消してしまうため、
+    // 幅が取れないときは何もしない。
+    if (wrapper && container && wrapper.clientWidth > 0) {
         const scale = wrapper.clientWidth / COLLAGE_W;
         container.style.transform = `scale(${scale})`;
     }
@@ -676,7 +760,7 @@ window.addEventListener("resize", resizeCollage);
 
 let isCutUpPlaying = false;
 let selectedPlan = "A";
-let activeCollageSlots = [null, null, null, null]; // Slot mapping for SCREEN 1, 2, 3, 4 cards
+let activeCollageSlots = new Array(COLLAGE_SLOTS).fill(null); // 同時表示枠のマッピング
 let nextSlotIndex = 0;
 
 // Agent A (Slicer) State
@@ -732,9 +816,10 @@ function startCutUpPlayback() {
     // Clear any previous collage videos and state
     clearCollageVideos();
     lastBox = null;
-    activeCollageSlots = [null, null, null, null];
+    activeCollageSlots = new Array(COLLAGE_SLOTS).fill(null);
     nextSlotIndex = 0;
-    
+    lastCollageSpawnAt = 0;
+
     logMessage("CONTROL", "Audio Cut-up Duet started (Twin-Agent Stereo Mode)");
     
     // タイムライン冒頭の黒画面を防ぐため、初期状態で全画面にLevel 1（静寂）動画をロード
@@ -778,7 +863,7 @@ function stopCutUpPlayback() {
     // Clear collage videos and state
     clearCollageVideos();
     lastBox = null;
-    activeCollageSlots = [null, null, null, null];
+    activeCollageSlots = new Array(COLLAGE_SLOTS).fill(null);
     
     // Clear idle timer
     if (idleTimer) {
@@ -1899,6 +1984,64 @@ function addDecisionLog(message, type = "info") {
 }
 window.addDecisionLog = addDecisionLog; // player.jsからも呼べるようにグローバル化
 
+/* =====================================================================
+ * 統一音響・統一フリーズ（Play B / test-level2 共通。special には付けない）
+ *  - 動画の音: 「大きさ→音量」「横位置→左右パン」。位置とサイズだけで L/R が
+ *    決まる単純な写像 (gain→stereoPanner)。Web Audio に繋げない環境では
+ *    音量のみで代替する(パン無し)。
+ *  - フリーズフレーム: pauseTime.xml 由来の freezeFramesPool の地点で一時停止。
+ *    停止秒数はフィボナッチ指標 (1,1,2,3,5秒) からランダム。
+ * ===================================================================== */
+function attachVideoSpatialAudio(el, left, top, w, h) {
+    el.muted = window.videosMuted;
+    const long = Math.max(w, h);                          // 梯子の段の長辺(向きに依らない)
+    const minL = SIZE_LADDER[SIZE_LADDER.length - 1].w;
+    const maxL = SIZE_LADDER[0].w;
+    const vol = 0.1 + 0.9 * Math.max(0, Math.min(1, (long - minL) / (maxL - minL)));
+    const pan = Math.max(-0.85, Math.min(0.85, ((left + w / 2) / COLLAGE_W) * 2 - 1));
+    try {
+        initAudioContext();
+        const src = audioCtx.createMediaElementSource(el);
+        const g = audioCtx.createGain();
+        g.gain.value = vol * (window.videoGainVolume || 1.0);
+        let out = g;
+        if (audioCtx.createStereoPanner) {
+            const p = audioCtx.createStereoPanner();
+            p.pan.value = pan;
+            g.connect(p); out = p;
+        }
+        src.connect(g);
+        out.connect(audioCtx.destination);
+        el.volume = 1.0;                                  // 実音量は gain 側で制御
+    } catch (e) {
+        el.volume = Math.min(1, vol * (window.videoGainVolume || 1.0));  // パン無し代替
+    }
+}
+
+const FREEZE_FIB_SEC = [1, 1, 2, 3, 5];
+function attachVideoFreeze(el, fileName) {
+    const times = (window.freezeFramesPool || {})[fileName];
+    if (!times || !times.length) return;
+    const fired = new Array(times.length).fill(false);
+    let frozen = false;
+    el.addEventListener("timeupdate", () => {
+        if (frozen || el.ended) return;
+        const t = el.currentTime;
+        for (let i = 0; i < times.length; i++) {
+            if (fired[i] || t < times[i] || t > times[i] + 1.0) continue; // 通過後1秒以内なら発火
+            fired[i] = true;
+            frozen = true;
+            const sec = FREEZE_FIB_SEC[Math.floor(Math.random() * FREEZE_FIB_SEC.length)];
+            el.pause();
+            setTimeout(() => {
+                frozen = false;
+                if (el.isConnected && !el.ended) el.play().catch(() => {});
+            }, sec * 1000);
+            break;
+        }
+    });
+}
+
 // Duet Collage Trigger and helper functions (Pattern B Test Only - Pre-cropped video version)
 function triggerCollageVideo(event, agentId) {
     if (!isCutUpPlaying || !collageContainer) return;
@@ -1913,9 +2056,16 @@ function triggerCollageVideo(event, agentId) {
     } else if (event.strength >= 0.25) {
         audioLevel = 2;
     }
-    
+
+    // 発火の間引き。強いイベント(L4=アタック)は詰めて出してよいが、弱いイベントは
+    // 最小間隔を空ける。これが無いと1枚あたりの滞在が枠数で頭打ちになる。
+    const nowMs = Date.now();
+    const gap = (audioLevel >= 4) ? COLLAGE_STRONG_GAP_MS : COLLAGE_MIN_GAP_MS;
+    if (lastCollageSpawnAt && nowMs - lastCollageSpawnAt < gap) return;
+    lastCollageSpawnAt = nowMs;
+
     // Select video data (always use new Set() so we can reuse files in this test collage)
-    const videoData = selectVideoByLevel(audioLevel, new Set());
+    const videoData = selectCollageVideo(audioLevel, new Set());
     if (!videoData) return;
     
     const fileName = videoData[0];
@@ -1928,11 +2078,12 @@ function triggerCollageVideo(event, agentId) {
     if (window.LexMap && match) LexMap.flash(match[1], event.onomatopoeia, agentId);
     const blobUrl = window.videoBlobCache[fileName] || (VIDEO_BASE_PATH + finalFileName);
     
-    // 短辺 S をフィボナッチサイズから選択し、長辺は 2 * S とすることでアスペクト比 1:2 / 2:1 を固定する
-    const S = FIB_SIZES[Math.floor(Math.random() * FIB_SIZES.length)];
-    const isVertical = Math.random() < 0.5;
-    const visW = isVertical ? S : 2 * S;
-    const visH = isVertical ? 2 * S : S;
+    // 統一サイズ梯子から1段選ぶ(アスペクト比 1:2 / 2:1 は梯子が保証)。
+    // 縦向きはキャンバス高(1080)に収まる段のみ — 1240段を縦にすると突き抜けるため横固定。
+    const step = SIZE_LADDER[Math.floor(Math.random() * SIZE_LADDER.length)];
+    const isVertical = Math.random() < 0.5 && step.w <= COLLAGE_H;
+    const visW = isVertical ? step.h : step.w;
+    const visH = isVertical ? step.w : step.h;
     
     let newVLeft = 0;
     let newVTop = 0;
@@ -2032,11 +2183,12 @@ function triggerCollageVideo(event, agentId) {
     videoEl.playsInline = true;
     videoEl.muted = window.videosMuted; // 音声の状態をグローバルと同期
     videoEl.loop = false;
+    videoEl.crossOrigin = "anonymous";  // R2直リンク再生時もWeb Audioへ繋ぐため(ローカル/blobでは無害)
     videoEl.src = blobUrl;
-    
-    // 枠のサイズ（短辺 S）に合わせて音量を自動調節 (Item 3)
-    const volume = (S - 144) / (610 - 144) * 0.9 + 0.1; // 0.1 (静) 〜 1.0 (動)
-    videoEl.volume = Math.min(1.0, volume * (window.videoGainVolume || 1.0)); // gain>1.0でのDOMException回避
+
+    // 統一音響: 大きさ→音量 / 横位置→左右パン。フリーズフレームも統一で付ける
+    attachVideoSpatialAudio(videoEl, newVLeft, newVTop, visW, visH);
+    attachVideoFreeze(videoEl, fileName);
     
     // "動画は自由に回転してよい" (0, 90, 180, 270度から選択)
     const ROTATIONS = [0, 90, 180, 270];
@@ -2075,6 +2227,8 @@ function triggerCollageVideo(event, agentId) {
     // 動画の再生が始まったタイミングでラッパーを滑らかにフェードイン (空枠の白線表示を防ぐ)
     videoEl.onplaying = () => {
         wrapperEl.style.opacity = "1";
+        // 最低滞在はここから数える(挿入時ではなく、実際に絵が出た時刻から)
+        if (!wrapperEl._shownAt) wrapperEl._shownAt = Date.now();
     };
     
     wrapperEl.appendChild(videoEl);
@@ -2082,21 +2236,34 @@ function triggerCollageVideo(event, agentId) {
     // コンテナへ追加
     collageContainer.appendChild(wrapperEl);
     
-    // 激しさレベル1,2の動画は「1枚を最後まで再生」するため、再生終了まで押し出しから保護する
+    // 最低滞在時間を割り当てる。大半は約10秒、一部だけ「一瞬」で消える。
     wrapperEl.dataset.level = String(audioLevel);
-    wrapperEl._protected = (audioLevel <= 2);
+    wrapperEl._bornAt = Date.now();
+    wrapperEl._shownAt = 0;                                    // 実際に絵が出た時刻(onplayingで入る)
+    wrapperEl._dwellMs = Math.random() < COLLAGE_FLASH_RATE ? COLLAGE_FLASH_MS : COLLAGE_DWELL_MS;
 
-    // 4スロットマッピング：空きスロット、無ければ保護されていない最古スロットを押し出し (Item 6)
+    // 枠のマッピング: 空き枠 → 最低滞在を過ぎた枠 → それも無ければ最も長く出ている枠
     let targetIndex = activeCollageSlots.findIndex(s => s === null);
     if (targetIndex === -1) {
-        // ラウンドロビン順に、保護されていない(L3/L4 または 再生終了済み)スロットを探して押し出す
-        for (let i = 0; i < 4; i++) {
-            const idx = (nextSlotIndex + i) % 4;
-            const w = activeCollageSlots[idx];
-            if (!w || !w._protected) { targetIndex = idx; break; }
+        const now = Date.now();
+        for (let i = 0; i < COLLAGE_SLOTS; i++) {
+            const idx = (nextSlotIndex + i) % COLLAGE_SLOTS;
+            if (collageEvictableAt(activeCollageSlots[idx]) <= now) { targetIndex = idx; break; }
         }
-        if (targetIndex === -1) targetIndex = nextSlotIndex; // 4枠すべて保護中なら通常押し出し
-        nextSlotIndex = (targetIndex + 1) % 4;
+        if (targetIndex === -1) {
+            // 全枠がまだ最低滞在中 → 最も早く空く枠(=最も長く出ている枠)を押し出す
+            let bestAt = Infinity;
+            for (let i = 0; i < COLLAGE_SLOTS; i++) {
+                const at = collageEvictableAt(activeCollageSlots[i]);
+                if (at < bestAt) { bestAt = at; targetIndex = i; }
+            }
+            // ただし犠牲になるのが「まだ一度も絵が出ていない枠」なら、それを潰してまで
+            // 新規を出す意味は無い(どちらも映らずに消えるだけ)。このトリガーは捨てる。
+            // 音が詰まっている間は自然に発火が抑制され、枠が落ち着く。
+            const victim = activeCollageSlots[targetIndex];
+            if (victim && !victim._shownAt) { wrapperEl.remove(); return; }
+        }
+        nextSlotIndex = (targetIndex + 1) % COLLAGE_SLOTS;
 
         // 古いラッパーをフェードアウトして除去
         const oldWrapper = activeCollageSlots[targetIndex];
@@ -2116,8 +2283,7 @@ function triggerCollageVideo(event, agentId) {
     // 再生完了した動画は最後のフレームで静止 (ステータスをFREEZINGに切り替え)
     videoEl.onended = () => {
         videoEl.pause();
-        wrapperEl.dataset.state = "FREEZING";
-        wrapperEl._protected = false; // 最後まで再生し終えたので押し出し可に
+        wrapperEl.dataset.state = "FREEZING";   // 最後まで再生し終えた枠はいつでも押し出せる
         updateMonitorUI();
     };
     
@@ -2220,13 +2386,11 @@ function buildPipePools() {
 }
 
 // ── 配置計算(回転なし。カードは2:1の横向きのまま、大きさだけ変える) ──
-const PIPE_STAGE_W = 3840, PIPE_STAGE_H = 2160;
+const PIPE_STAGE_W = 1920, PIPE_STAGE_H = 1080;
 
-// カードの大きさ(約0.618倍ずつの階段)。1枚ごとに決め、再生中は変えない。
-const PIPE_SIZES = [
-    { w: 1240, h: 620 }, { w: 766, h: 383 }, { w: 474, h: 237 },
-    { w: 293, h: 146 },  { w: 181, h: 90 },  { w: 112, h: 56 },
-];
+// カードの大きさは統一サイズ梯子(SIZE_LADDER)をそのまま使う。
+// 1枚ごとに決め、再生中は変えない。
+const PIPE_SIZES = SIZE_LADDER;
 const PIPE_SIZE_DEFAULT = 2;                         // 474x237
 
 // 直前カード(rect/curSize)の outEdge から出て、次カード(nextSize)へ inEdge から入る左上座標。
@@ -2284,6 +2448,61 @@ function pipeFlowAffinity(f, rect, size) {
     return 1.4;                                                      // ほどよく絡む距離
 }
 
+/* ── オノマトペによる重み付け ────────────────────────────────────────
+ * 「いま鳴っている音の語」に質感が近い映像をやや優遇する。
+ * 【厳守】候補の絞り込み(入り口の辺の一致・はみ出し判定)には一切関与しない。
+ *         既に有効と判定された候補の重みを上下させるだけなので、a/b/c/d の
+ *         連結規則も b/d・d/b が多くなる性質もそのまま保たれる。
+ * 偏り対策: 候補集合の中での相対順位だけを使い、倍率を
+ *         最大 PIPE_ONOMA_BIAS 倍 〜 最小 1/PIPE_ONOMA_BIAS 倍 に収める。
+ *         候補を除外しないため、行き止まり回避・Uターン抑制(最大20倍・6.7倍)
+ *         といった既存の重みが引き続き支配的になる。
+ * ------------------------------------------------------------------ */
+const PIPE_ONOMA_BIAS = 1.8;
+
+// いま鳴っている音のオノマトペ。updateLoop に依存しないので、
+// Combination の pipe フェーズ(isPlaying=false)でも同じように効く。
+function pipeCurrentWord() {
+    if (!audioElement || !currentTrackEvents || !currentTrackEvents.length) return null;
+    const t = audioElement.currentTime || 0;
+    let best = -1, word = null;
+    for (const e of currentTrackEvents) {
+        if (e.time_sec <= t && e.time_sec > best && e.onomatopoeia) { best = e.time_sec; word = e.onomatopoeia; }
+    }
+    return word;
+}
+
+const pipeVideoNum = (fileName) => parseInt((String(fileName).match(/(\d+)/) || [])[1], 10);
+
+// cands: [{p, w, ...}] の w を語との近さで上下させる。語やベクトルが無ければ何もしない。
+function pipeApplyOnomaBias(cands) {
+    const word = pipeCurrentWord();
+    PIPE.word = word;
+    if (!word || !window.LexMap || !LexMap.wordVideoDistance) return;
+    let lo = Infinity, hi = -Infinity;
+    for (const c of cands) {
+        c.d = LexMap.wordVideoDistance(pipeVideoNum(c.p.data[0]), word);
+        if (c.d == null) continue;
+        if (c.d < lo) lo = c.d;
+        if (c.d > hi) hi = c.d;
+    }
+    if (!isFinite(lo) || hi - lo < 1e-6) return;      // 差が付かないなら触らない
+    for (const c of cands) {
+        if (c.d == null) continue;
+        const rel = (c.d - lo) / (hi - lo);           // 0=最も近い 1=最も遠い
+        c.w *= Math.pow(PIPE_ONOMA_BIAS, 1 - 2 * rel);
+    }
+}
+
+// 重み付きランダムで1つ選ぶ
+function pipeWeightedPick(cands) {
+    let total = 0;
+    for (const c of cands) total += c.w;
+    let t = Math.random() * total;
+    for (const c of cands) { t -= c.w; if (t <= 0) return c; }
+    return cands[cands.length - 1];
+}
+
 /* 次カードを重みづけで選ぶ。
  *   必須: 入り口の辺が requiredIn と一致し、置いても画面からはみ出さないこと。
  *   重み: ・その先にもう1枚置けない手(行き止まり)は大きく減点
@@ -2295,7 +2514,6 @@ function pipeFlowAffinity(f, rect, size) {
 function pickNextPipe(f, requiredIn, size) {
     const travel = pipeEdgeBase(f.out);              // 直前に進んだ向き
     const cands = [];
-    let total = 0;
     for (const p of PIPE.pool) {
         if (pipeEdgeBase(p.in) !== requiredIn) continue;
         const rect = pipePlaceNext(f.rect, f.size, f.out, p.in, size);
@@ -2310,12 +2528,10 @@ function pickNextPipe(f, requiredIn, size) {
         w *= pipeTempoWeight(p, f.sizeIdx);
         w *= pipeFlowAffinity(f, rect, size);
         cands.push({ p, rect, w });
-        total += w;
     }
     if (!cands.length) return null;
-    let t = Math.random() * total;
-    for (const c of cands) { t -= c.w; if (t <= 0) return c; }
-    return cands[cands.length - 1];
+    pipeApplyOnomaBias(cands);      // ここで初めて語が効く。候補集合そのものは上で確定済み
+    return pipeWeightedPick(cands);
 }
 
 // フローを開始位置へ戻す(初回・行き止まり時)
@@ -2384,10 +2600,16 @@ function advanceFlow(f) {
     let size = PIPE_SIZES[sizeIdx];
 
     // 直前の出口の反対側から入る動画を選ぶ(b→d / d→b / a→c / c→a)。
-    // 初回・行き止まりのときは開始位置へ戻して仕切り直す。
+    // 選んだ大きさで置けない(行き止まり)ときは、リセットする前に一段ずつ小さい段で
+    // 置き直せないか試す。大きさは連結規則(辺)とは無関係なので、これで連結の連続性を
+    // 保ったまま行き止まり率を下げられる。それでも駄目なら開始位置へ仕切り直す。
     let cand = null, rect = null, pick = null;
     if (f.out) {
-        cand = pickNextPipe(f, PIPE_OPPOSITE[pipeEdgeBase(f.out)], size);
+        const req = PIPE_OPPOSITE[pipeEdgeBase(f.out)];
+        for (let s = sizeIdx; s < PIPE_SIZES.length && !cand; s++) {
+            cand = pickNextPipe(f, req, PIPE_SIZES[s]);
+            if (cand) { sizeIdx = s; size = PIPE_SIZES[s]; }
+        }
         if (cand) { pick = cand.p; rect = cand.rect; }
     }
     if (!pick) {
@@ -2398,7 +2620,11 @@ function advanceFlow(f) {
         const fresh = PIPE.pool.filter(p => p.data[0] !== f.lastFile);
         const src = fresh.length ? fresh : PIPE.pool;
         if (!src.length) return;
-        pick = src[Math.floor(Math.random() * src.length)];
+        // 1枚目は入り口の制約が無いぶん完全ランダムだった。ここも語で重み付けする
+        // (制約が無いので連結ロジックには影響しない)。
+        const seeds = src.map(p => ({ p, w: 1 }));
+        pipeApplyOnomaBias(seeds);
+        pick = pipeWeightedPick(seeds).p;
         rect = { ...f.rect };
     }
 
@@ -2409,13 +2635,16 @@ function advanceFlow(f) {
     const el = document.createElement("video");
     el.className = "pipe-card";
     el.playsInline = true;
-    el.muted = true;
+    el.crossOrigin = "anonymous";       // R2フォールバック時もWeb Audioへ繋ぐため
     el.style.left = `${rect.left}px`;
     el.style.top = `${rect.top}px`;
     el.style.width = `${size.w}px`;
     el.style.height = `${size.h}px`;
     el.src = pipeVideoSrc(fileName);
     conveyor.appendChild(el);
+    // 統一音響+統一フリーズ: 大きさ→音量 / 横位置→パン、PAUSE地点でフィボナッチ秒静止
+    attachVideoSpatialAudio(el, rect.left, rect.top, size.w, size.h);
+    attachVideoFreeze(el, fileName);
 
     // クロスフェード: このフローの旧カードをフェイドアウトして除去
     const old = f.card;
@@ -2458,7 +2687,11 @@ function advanceFlow(f) {
     el.load();
 
     PIPE.count++;
-    if (window.addDecisionLog) window.addDecisionLog(`Flow${f.id + 1} #${PIPE.count}: ${fileName} (${pick.in}→${pick.out}, ${videoData[1]}s)`, "trigger");
+    // ライブマップ駆動: 出した映像と鳴っている語を光らせる(Play B と同じ扱い)。
+    // 映像—語—音 の三者が結ばれ、test-level2 でもマップが動く。
+    if (window.LexMap) LexMap.flash(pipeVideoNum(fileName), PIPE.word, "A");
+    const wordTag = PIPE.word ? ` 〈${PIPE.word}〉` : "";
+    if (window.addDecisionLog) window.addDecisionLog(`Flow${f.id + 1} #${PIPE.count}: ${fileName} (${pick.in}→${pick.out}, ${videoData[1]}s)${wordTag}`, "trigger");
     console.log(`[pipe] flow${f.id} ${fileName} in=${pick.in} out=${pick.out} ${size.w}x${size.h} at (${Math.round(rect.left)},${Math.round(rect.top)})`);
 }
 
@@ -2468,17 +2701,37 @@ function advanceFlow(f) {
  *    ・→ test-level2(やや遅い調子) を音声1曲分
  *    ・これを繰り返す
  *    ・数巡に一度スペシャル: 動画90/91/92 と音声T525/526/527 を対で、
- *      画面中央 1240x620 に、他の映像・音声を出さず丸ごと1本再生する。
+ *      キャンバス中央に横幅フィットで、他の映像・音声を出さず丸ごと1本再生する。
  *      (90〜92 はローカルの videos/ に無く R2 にのみ在るため R2 から直接再生)
  * ===================================================================== */
-// Play B の持ち時間(既定2分)。?combi=5 のように秒で上書きでき、動作確認を短時間で回せる。
-const COMBI_PLAYB_MS = (() => {
+// Play B の持ち時間は「2分前後」: 毎回 105〜135秒からランダム。
+// ?combi=5 のように秒で固定上書きでき、動作確認を短時間で回せる。
+const COMBI_PLAYB_MS_Q = (() => {
     const q = parseFloat(new URLSearchParams(location.search).get("combi"));
-    return (isFinite(q) && q > 0) ? q * 1000 : 120000;
+    return (isFinite(q) && q > 0) ? q * 1000 : null;
 })();
-const COMBI_SPECIAL_EVERY  = 4;               // 何巡に一度スペシャルを挟むか
+const combiPlayBMs = () => COMBI_PLAYB_MS_Q || (105000 + Math.random() * 30000);
+/* special の解放スイッチ。
+ * 動画90/91/92 を編集して差し替えたあとに解放する予定のため、現状は false。
+ * 解放するときは下の false を true にするだけでよい(コードの他の場所は触らない)。
+ * 実行中に切り替えたい場合は、コンソールで skinslidesSetSpecial(true) を呼ぶ。
+ * false の間は Combination が Play B ⇄ test-level2 の交互だけを回す。 */
+let COMBI_SPECIAL_ENABLED = false;
+window.skinslidesSetSpecial = function (on) {
+    COMBI_SPECIAL_ENABLED = !!on;
+    if (COMBI_SPECIAL_ENABLED && COMBI.active) COMBI.specialAt = Date.now() + combiNextSpecialDelay();
+    if (window.addDecisionLog) window.addDecisionLog(`special: ${COMBI_SPECIAL_ENABLED ? "解放" : "停止"}`, "system");
+    return COMBI_SPECIAL_ENABLED;
+};
+
+// special は15〜30分に一回程度。回数ではなく経過時間で判定する(1巡の長さは
+// 曲の尺で揺れるため、巡数固定だと間隔が安定しない)。
+const COMBI_SPECIAL_MIN_MS = 15 * 60 * 1000;
+const COMBI_SPECIAL_MAX_MS = 30 * 60 * 1000;
+const combiNextSpecialDelay = () =>
+    COMBI_SPECIAL_MIN_MS + Math.random() * (COMBI_SPECIAL_MAX_MS - COMBI_SPECIAL_MIN_MS);
 const COMBI_R2 = "https://pub-b863fe2ba58a4525be0263e22ceb85a5.r2.dev/";
-const COMBI = { active: false, phase: null, cycle: 0, timer: null, cleanup: null };
+const COMBI = { active: false, phase: null, cycle: 0, timer: null, cleanup: null, specialAt: 0 };
 
 function combiClearTimer() {
     if (COMBI.timer) { clearTimeout(COMBI.timer); COMBI.timer = null; }
@@ -2513,9 +2766,22 @@ function combiPlayOneTrack(next) {
 function combiEnterPlayB() {
     combiStopAll();
     COMBI.phase = "playB";
+    const ms = combiPlayBMs();
     startCutUpPlayback();
-    if (window.addDecisionLog) window.addDecisionLog(`Combination: Play B (${COMBI_PLAYB_MS / 1000}秒)`, "success");
-    COMBI.timer = setTimeout(() => { if (COMBI.active) combiEnterPipe(); }, COMBI_PLAYB_MS);
+    if (window.addDecisionLog) window.addDecisionLog(`Combination: Play B (${Math.round(ms / 1000)}秒)`, "success");
+    COMBI.timer = setTimeout(() => { if (COMBI.active) combiEnterPipe(); }, ms);
+}
+
+// pipe フェーズ中は updateLoop(isPlaying) が回らないため、レーンAのタイムラインと
+// 時刻表示をここで駆動する。フェーズが変われば条件が外れて自然に止まる。
+function combiPipeUiLoop() {
+    if (!COMBI.active || COMBI.phase !== "pipe") return;
+    const d = (audioElement && audioElement.duration) || 0;
+    const t = audioElement ? audioElement.currentTime : 0;
+    drawTimeline("timeline-canvas-a", t, d, currentTrackEvents || []);
+    const timeElA = document.getElementById("ana-time-a");
+    if (timeElA) timeElA.textContent = `${t.toFixed(1)}s / ${d.toFixed(1)}s`;
+    requestAnimationFrame(combiPipeUiLoop);
 }
 
 function combiEnterPipe() {
@@ -2523,26 +2789,25 @@ function combiEnterPipe() {
     COMBI.phase = "pipe";
     enterTestLevel2();
     if (window.addDecisionLog) window.addDecisionLog("Combination: test-level2 (音声1曲分)", "success");
+    drawTimeline("timeline-canvas-b", 0, 0, []);   // レーンBは前フェーズの残像を消しておく
     COMBI.cleanup = combiPlayOneTrack(() => {
         if (!COMBI.active) return;
         COMBI.cycle++;
-        if (COMBI.cycle % COMBI_SPECIAL_EVERY === 0) combiEnterSpecial();
+        // special は「解放されていて、かつ前回から15〜30分(抽選済み)経過していたら」挟む
+        if (COMBI_SPECIAL_ENABLED && Date.now() >= COMBI.specialAt) combiEnterSpecial();
         else combiEnterPlayB();
     });
+    combiPipeUiLoop();
 }
 
 /* ── special シーン ───────────────────────────────────────────────────
- * 動画90/91/92 と音声T525/T526/T527 を一音一映像の対で、画面中央
- * 1240x620 に丸ごと1本再生する。他の映像・音声は出さない。
+ * 動画90/91/92 を16:9キャンバスの中央に横幅フィット(2:1素材→1920x960)で
+ * 丸ごと1本再生する。他の映像・音声は出さない。
+ * 音は音声トラックを使わず「動画自体の音声」だけを鳴らす(2026-08-05統一仕様)。
+ * フリーズフレーム・空間音響も special には適用しない。
  * 90〜92 はローカルの videos/ に無く R2 にのみ在るため R2 から直接再生。
- * 音声のIDは "T525.aif"(loadTrackが内部で.mp3へ変換)。".mp3"を渡すと
- * file_id と一致せず無音になるので注意。
  * ------------------------------------------------------------------ */
-const SPECIAL_PAIRS = [
-    { video: 90, audio: "T525.aif" },
-    { video: 91, audio: "T526.aif" },
-    { video: 92, audio: "T527.aif" },
-];
+const SPECIAL_VIDEOS = [90, 91, 92];
 const SPECIAL = { active: false, box: null, lastIdx: -1, onEnd: null };
 
 function specialTeardown() {
@@ -2551,33 +2816,38 @@ function specialTeardown() {
     if (audioElement) { try { audioElement.pause(); } catch (e) {} }
 }
 
-// 対を1つ再生する。動画と音声の両方が終わったら next() を呼ぶ(=まるまる再生)。
+// 1本を丸ごと再生し、終わったら next() を呼ぶ。音は動画自体の音声のみ。
 function specialPlayOnce(next) {
-    let i = Math.floor(Math.random() * SPECIAL_PAIRS.length);
-    if (SPECIAL_PAIRS.length > 1 && i === SPECIAL.lastIdx) i = (i + 1) % SPECIAL_PAIRS.length;
+    let i = Math.floor(Math.random() * SPECIAL_VIDEOS.length);
+    if (SPECIAL_VIDEOS.length > 1 && i === SPECIAL.lastIdx) i = (i + 1) % SPECIAL_VIDEOS.length;
     SPECIAL.lastIdx = i;
-    const pair = SPECIAL_PAIRS[i];
+    const videoNum = SPECIAL_VIDEOS[i];
     const sfx = window.VIDEO_QUALITY_SUFFIX || "Sss720p";
 
+    // 他シーンと同じ 16:9 キャンバス(.display-area)の中に置く。viewport固定ではないため
+    // --app-scale で一緒に縮み、フェーズが変わっても画角が飛ばない。
+    const stage = document.querySelector(".display-area") || document.body;
     const box = document.createElement("div");
     box.id = "special-stage";
     box.style.cssText =
-        "position:fixed; inset:0; z-index:9999; background:#000; display:flex;" +
+        "position:absolute; inset:0; z-index:9999; background:#000; display:flex;" +
         "align-items:center; justify-content:center;";
     const vid = document.createElement("video");
     vid.playsInline = true;
-    vid.muted = true;                       // 音は audioElement 側だけを鳴らす
-    vid.style.cssText = "width:1240px; height:620px; object-fit:contain; background:#000;";
-    vid.src = COMBI_R2 + `${pair.video}-${sfx}.mp4`;
+    vid.muted = false;                      // 動画自体の音声だけを鳴らす(トラックは使わない)
+    // 枠いっぱい + contain。素材は 2:1 なので 16:9 キャンバスでは自動的に
+    // 横幅いっぱい(1920x960)・上下センターになる。サイズ計算は一切しない。
+    // センター全面表示なのでパン=0・音量=1、空間音響も不要。
+    vid.style.cssText = "width:100%; height:100%; object-fit:contain; background:#000;";
+    vid.src = COMBI_R2 + `${videoNum}-${sfx}.mp4`;
     box.appendChild(vid);
-    document.body.appendChild(box);
+    stage.appendChild(box);
     SPECIAL.box = box;
 
-    // 映像と音声の両方が終わってから次へ(片方が欠けても止まらないようにする)
-    let pending = 2, done = false;
+    // 動画1本がまるまる終わったら次へ
+    let done = false;
     const settle = () => {
         if (done) return;
-        if (--pending > 0) return;
         done = true;
         if (box.parentNode) box.parentNode.removeChild(box);
         if (SPECIAL.box === box) SPECIAL.box = null;
@@ -2588,7 +2858,7 @@ function specialPlayOnce(next) {
     // パイプカードと同じく canplay を待ってから鳴らす。
     vid.addEventListener("ended", settle, { once: true });
     vid.addEventListener("error", () => {
-        console.warn(`[special] 動画 ${pair.video} を読めません`, vid.error && vid.error.message);
+        console.warn(`[special] 動画 ${videoNum} を読めません`, vid.error && vid.error.message);
         settle();
     }, { once: true });
     vid.addEventListener("canplay", () => {
@@ -2596,21 +2866,8 @@ function specialPlayOnce(next) {
     }, { once: true });
     vid.load();
 
-    if (audioElement) {
-        loadTrack(pair.audio);
-        audioElement.addEventListener("ended", settle, { once: true });
-        audioElement.addEventListener("canplay", () => {
-            audioElement.play().catch(err => {
-                console.warn("[special] 音声のplay失敗", err);
-                settle();
-            });
-        }, { once: true });
-    } else {
-        settle();
-    }
-
-    console.log(`[special] ${pair.video}-${sfx}.mp4 + ${pair.audio}`);
-    if (window.addDecisionLog) window.addDecisionLog(`special: 動画${pair.video} + 音声${pair.audio} (中央1240x620)`, "trigger");
+    console.log(`[special] ${videoNum}-${sfx}.mp4 (動画音声のみ)`);
+    if (window.addDecisionLog) window.addDecisionLog(`special: 動画${videoNum} (動画音声のみ・キャンバス中央)`, "trigger");
 }
 
 // ファイルをランダムに変えながらループ
@@ -2638,6 +2895,7 @@ function combiEnterSpecial() {
     combiStopAll();
     COMBI.phase = "special";
     COMBI.cleanup = specialTeardown;
+    COMBI.specialAt = Date.now() + combiNextSpecialDelay();   // 次のspecialを抽選
     specialPlayOnce(() => { if (COMBI.active) combiEnterPlayB(); });
 }
 
@@ -2647,7 +2905,8 @@ function startCombination() {
     }
     COMBI.active = true;
     COMBI.cycle = 0;
-    combiEnterPlayB();
+    COMBI.specialAt = Date.now() + combiNextSpecialDelay();   // 初回specialまでの間隔を抽選
+    combiEnterPlayB();                                         // 冒頭は必ず Play B から
 }
 
 function stopCombination() {

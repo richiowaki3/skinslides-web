@@ -60,7 +60,7 @@
     resize();
     running = true;
     requestAnimationFrame(loop);
-    window.LexMap = { flash, setTrack, clearAll };
+    window.LexMap = { flash, setTrack, clearAll, wordVideoDistance };
     console.log('[lexmap] ready:', nodes.length, 'nodes,', DATA.edges.length, 'edges');
   }
 
@@ -146,6 +146,22 @@
     if (t) t.heat = Math.max(t.heat, 0.7);
   }
   function clearAll() { nodes.forEach(n => n.heat = 0); activeTrack.A = activeTrack.B = null; liveLinks = []; }
+
+  // ---- 質感距離（選択ロジック向けの読み取り専用API） ----
+  // 10軸のうち x7 は動画側が定数(4.5)で情報を持たないため、build_lexicon_map.js の
+  // wdistVid と同じく距離計算から除外する。
+  const VEC_AXES = ['x1','x2','x3','x4','x5','x6','x8','x9','x16'];
+  function vecDist(a, b) {
+    if (!a || !b) return null;
+    let s = 0;
+    for (const k of VEC_AXES) { const d = (a[k] || 0) - (b[k] || 0); s += d * d; }
+    return Math.sqrt(s);
+  }
+  // 映像番号と語の質感距離。データが無ければ null（呼び出し側は従来動作に落とす）。
+  function wordVideoDistance(videoNum, word) {
+    const v = byId.get('v' + videoNum), w = wordByLabel.get(word);
+    return (v && w) ? vecDist(v.vec, w.vec) : null;
+  }
 
   // relay corpus: two-hop triad through the shared word (for hover)
   function relationSet(id) {

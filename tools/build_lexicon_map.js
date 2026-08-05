@@ -70,7 +70,11 @@ const proj=C.map(r=>[r.reduce((s,x,j)=>s+x*pc1[j],0), r.reduce((s,x,j)=>s+x*pc2[
 // 0..1 正規化
 const xs=proj.map(p=>p[0]),ys=proj.map(p=>p[1]);
 const nx=[Math.min(...xs),Math.max(...xs)],ny=[Math.min(...ys),Math.max(...ys)];
-nodes.forEach((nd,i)=>{ nd.x=(proj[i][0]-nx[0])/(nx[1]-nx[0]); nd.y=(proj[i][1]-ny[0])/(ny[1]-ny[0]); delete nd.vec; });
+// vec(10軸の質感ベクトル)は映像選択(語→映像の距離)で使うため残す。表示だけだった頃は
+// 捨てていたが、test-level2 / Play B のオノマトペ駆動に必要。小数2桁に丸めて保持する。
+// dictVec/videoVec を破壊しないよう、丸めたコピーを新しく作って差し替える(この後のエッジ計算が元の値を使う)。
+nodes.forEach((nd,i)=>{ nd.x=(proj[i][0]-nx[0])/(nx[1]-nx[0]); nd.y=(proj[i][1]-ny[0])/(ny[1]-ny[0]);
+  const rv={}; AXKEYS.forEach(a=>rv[a]=+nd.vec[a].toFixed(2)); nd.vec=rv; });
 
 // エッジ
 const wdistVid=(a,b)=>{let s=0;for(const k of AXKEYS){if(k==="x7")continue;const d=a[k]-b[k];s+=d*d;}return Math.sqrt(s);};

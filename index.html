@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>skinslides - Ambient Video Player</title>
+    <title>skinslides - Motion Logic Core</title>
     <script>
         // Global error logger for remote debugging
         window.onerror = function(message, source, lineno, colno, error) {
@@ -28,12 +28,12 @@
             }
             return false;
         };
-        
+
         window.addEventListener('unhandledrejection', function(event) {
             const reason = event.reason;
             const message = reason instanceof Error ? reason.message : reason;
             const stack = reason instanceof Error ? reason.stack : '';
-            
+
             const overlay = document.getElementById("start-overlay");
             if (overlay) {
                 let errDiv = document.getElementById("debug-error-log");
@@ -56,81 +56,25 @@
             }
         });
     </script>
+    <link rel="stylesheet" href="skinslides.css?v=1.15.0">
     <style>
-        body {
-            margin: 0;
-            background-color: #000;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            min-height: 100vh;
-            overflow-y: auto;
-            color: #fff;
-            font-family: sans-serif;
-        }
-        .screen-container {
-            display: flex;
-            gap: 100px;
-            height: 100vh;
-            align-items: center;
-            justify-content: center;
-            box-sizing: border-box;
-        }
-        .screen-wrapper {
-            position: relative;
-            width: 320px;
-            height: 568px; 
-            background-color: #000;
-            overflow: hidden;
-            border: none;
-        }
-        .screen {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 568px; /* ラップ枠の高さに合わせる */
-            height: 320px; /* ラップ枠の幅に合わせる */
-            transform: translate(-50%, -50%) rotate(90deg);
-            object-fit: cover;
-            opacity: 0;
-            transition: opacity 0.5s ease;
-        }
-        .screen.playing {
-            opacity: 1;
-        }
-        #player-4 {
-            display: none;
-        }
-
-        /* ==== スマホ対応: 向き・横並び・アスペクトはそのまま、横幅に合わせて縮小 ====
-           320:568 = 1:1.775。90度回転したvideoの実寸はwrapperの縦横入替なので、
-           --sw 1変数からwrapper/video両方を導出すればレスポンシブでも整合する */
-        @media (max-width: 1200px) {
-            .screen-container {
-                gap: 4vw; /* 28vw x3 + 4vw x2 = 92vw で横幅内に収まる */
-            }
-            .screen-wrapper {
-                --sw: min(320px, 28vw, 85vh / 1.775);
-                width: var(--sw);
-                height: calc(var(--sw) * 1.775);
-            }
-            .screen {
-                width: calc(var(--sw) * 1.775);
-                height: var(--sw);
-            }
-        }
+        /* このページ固有: 起動オーバーレイ(クレジット画面)。
+           文言・ボタンの見た目は従来のトップ画面をそのまま維持する。 */
         #start-overlay {
             position: fixed;
-            top: 0; left: 0;
-            width: 100vw; height: 100vh;
-            background: rgba(0,0,0,0.92); /* 少し暗めにして背景の可読性をアップ */
+            inset: 0;
+            background: rgba(0,0,0,0.92);
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            z-index: 100;
-            cursor: default; /* ボタンのみポインターにするためデフォルトに変更 */
+            z-index: 10000;
+            cursor: default;
             letter-spacing: 2px;
+            overflow-y: auto;
+            padding: 40px 20px;
+            box-sizing: border-box;
+            transition: opacity 0.5s ease;
         }
         .title {
             font-size: 2.2rem;
@@ -139,6 +83,7 @@
             font-family: Helvetica, Arial, sans-serif;
             font-weight: bold;
             color: #ffffff;
+            text-align: center;
         }
         .start-btn {
             padding: 15px 40px;
@@ -146,190 +91,26 @@
             font-size: 1.2rem;
             font-family: Helvetica, Arial, sans-serif;
             letter-spacing: 1px;
-            /* text-transform: uppercase を削除して指定の大文字小文字を維持 */
+            cursor: pointer;
+            background: transparent;
+            color: #ffffff;
+            transition: all 0.2s ease;
         }
         .start-btn:hover {
             background-color: #fff;
             color: #000;
         }
-
-        /* Analysis Dashboard Styles - Swiss Design / Helvetica / Sharp */
-        .analysis-dashboard {
-            width: 100%;
-            max-width: 1000px;
-            margin: 40px auto 60px auto;
-            padding: 12px 16px;
-            background: #000; /* 完全な黒 */
-            border: 1px solid #333; /* 鋭い境界線 */
-            border-radius: 0px; /* 角丸なし */
-            box-sizing: border-box;
-            color: #d1d5db;
-            font-family: "Helvetica Neue", Helvetica, Arial, "Hiragino Kaku Gothic ProN", sans-serif;
-            font-size: 11px;
-            letter-spacing: 0.5px;
-        }
-        .dashboard-title-area {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid #333;
-            padding-bottom: 6px;
-            margin-bottom: 12px;
-        }
-        .dashboard-title {
-            margin: 0;
-            font-size: 12px;
-            font-weight: 700;
-            letter-spacing: 1px;
-            text-transform: uppercase;
-            color: #fff;
-        }
-        .audio-toggle-btn {
-            background: #111;
-            border: 1px solid #333;
-            color: #fff;
-            padding: 4px 8px;
-            border-radius: 0px; /* 角丸なし */
-            font-family: inherit;
-            font-size: 10px;
-            cursor: pointer;
-            text-transform: uppercase;
-            transition: all 0.1s ease;
-        }
-        .audio-toggle-btn:hover {
-            background: #222;
-            border-color: #00ffaa;
-        }
-        .timeline-section {
-            background: #050505;
-            border-radius: 0px; /* 角丸なし */
-            padding: 10px;
-            margin-bottom: 16px;
-            border: 1px solid #222;
-        }
-        .timeline-header {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 6px;
-            font-size: 10px;
-            color: #888;
-            font-weight: 600;
-        }
-        .timeline-canvas-wrapper {
-            position: relative;
-            width: 100%;
-        }
-        #timeline-canvas {
-            display: block;
-            width: 100%;
-            height: 60px; /* 縦幅をスリムに */
-            background: #020202;
-            border-radius: 0px; /* 角丸なし */
-            border: 1px solid #222;
-        }
-        .timeline-legend {
-            display: flex;
-            gap: 15px;
-            margin-top: 8px;
-            font-size: 9px;
-            color: #888;
-            justify-content: center;
-            text-transform: uppercase;
-        }
-        .legend-item {
-            display: flex;
-            align-items: center;
-            gap: 4px;
-        }
-        .legend-color {
-            display: inline-block;
-            width: 8px;
-            height: 8px;
-            border-radius: 0px; /* 角丸なし */
-        }
-        .legend-color.attack { background: #ff7700; }
-        .legend-color.swell { background: #00bfff; }
-        .legend-color.roll { background: #00ffaa; }
-        .legend-color.quiet { background: #555577; }
-        
-        .monitor-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 12px;
-        }
-        .monitor-card {
-            background: #050505;
-            border: 1px solid #222;
-            border-radius: 0px; /* 角丸なし */
-            padding: 10px;
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-        }
-        .monitor-card.log-card {
-            grid-column: span 2;
-        }
-        @media (max-width: 900px) {
-            .monitor-card.log-card {
-                grid-column: span 1;
-            }
-        }
-        .card-header {
-            font-weight: 700;
-            font-size: 10px;
-            letter-spacing: 0.5px;
-            color: #888;
-            border-bottom: 1px solid #222;
-            padding-bottom: 4px;
-            text-transform: uppercase;
-        }
-        .card-body {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            font-size: 10px;
-        }
-        .stat-row {
-            display: flex;
-            justify-content: space-between;
-            line-height: 1.4;
-        }
-        .stat-label {
-            color: #888;
-        }
-        .stat-val {
-            font-weight: 500;
-            font-family: "Helvetica Neue", Helvetica, Arial, monospace;
-            color: #fff;
-        }
-        .scroll-log {
-            height: 140px; /* 縦幅に余裕を持たせる */
-            overflow-y: auto;
-            font-family: Monaco, Menlo, Consolas, monospace;
-        }
-        .log-line {
-            border-bottom: 1px solid #1a1a1a;
-            padding: 4px 6px;
-            font-size: 11px;
-            line-height: 1.5;
-            letter-spacing: 0.05em;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-        .log-line.info { color: #00bfff; }
-        .log-line.success { color: #00ffaa; }
-        .log-line.warning { color: #ff7700; }
     </style>
 </head>
 <body>
+    <!-- 起動オーバーレイ: クレジット画面は従来のトップ画面のまま。ボタンは1つだけ。 -->
     <div id="start-overlay">
         <div class="title">skinslides:Motion Logic Core</div>
-        <div class="start-btn" id="start-btn-el" style="display: none; cursor: pointer;">[clickto start seQuence]</div>
-        <div id="preload-status" style="font-size: 14px; letter-spacing: 0.05em; color: #ff3366; margin-top: 15px; font-weight: bold; font-family: Helvetica, Arial, sans-serif;">
-            Preloading videos: <span id="preload-progress">0%</span>
+        <div class="start-btn" id="start-btn-el" style="display: none;">[clickto start seQuence]</div>
+        <div id="overlay-preload-status-container" style="font-size: 14px; letter-spacing: 0.05em; color: #ff3366; margin-top: 15px; font-weight: bold; font-family: Helvetica, Arial, sans-serif; text-align: center;">
+            Preloading videos: <span id="overlay-preload-progress">0%</span>
         </div>
-        
+
         <div class="credits" style="margin-top: 45px; font-family: Helvetica, Arial, sans-serif; font-size: 11px; line-height: 1.7; color: #8892b0; text-align: center; font-weight: 300; letter-spacing: 0.5px;">
             Construction: Richi Owaki<br>
             Performance: Alessio Silvestrin<br>
@@ -338,9 +119,9 @@
             Technical Support (2009): YCAM InterLab<br>
             <br>
             2026 Web Reconstruction<br>
-            System Re-engineering & AI Logic: Richi Owaki, AI Agent
+            System Re-engineering &amp; AI Logic: Richi Owaki, AI Agent
         </div>
-        
+
         <div class="description" style="margin-top: 35px; max-width: 600px; font-family: Helvetica, Arial, sans-serif; font-size: 11px; line-height: 1.7; color: #636f88; text-align: center; font-weight: 300; letter-spacing: 0.5px;">
             Conceived as an “interface for a permanent preservation of the dancer’s movements,” this video dance piece is based on the idea of producing images and sound first, and subsequently programming a data-choreography out of the single elements.<br><br>
             While the original 2009 version featured three 1.8m x 0.9m acrylic screens embedded in the floor, the 2026 Web update utilizes advanced dynamic video and acoustic analysis to newly analyze the 55 video clips and sound assets. This allows the physical dynamics of the footage to sync asynchronously and organically with Yoshihide Otomo's soundtrack, weaving a brand-new, infinitely generated choreography.
@@ -359,33 +140,94 @@
         </div>
     </div>
 
-    <!-- 可視3画面 (鬣フレーム・90度回転) -->
-    <div class="screen-container">
-        <div class="screen-wrapper">
-            <video id="player-1" class="screen" playsinline></video>
+    <div class="main-container">
+        <!-- 非表示の操作パネル。エンジン(audio_trigger_logic.js)が参照する要素を保持するためだけに置く。
+             .dashboard は skinslides.css で display:none。 -->
+        <div class="dashboard">
+            <select id="track-select"><option value="" disabled selected>Loading…</option></select>
+            <button id="play-btn" style="display:none;">Play</button>
+            <button id="cutup-btn" style="display:none;">Cut-up</button>
+            <div id="preload-status">Preloading videos: <span id="preload-progress">0%</span></div>
+            <select id="mode-select">
+                <option value="metadata" selected>metadata</option>
+                <option value="realtime">realtime</option>
+                <option value="test-level2">test-level2</option>
+            </select>
+            <span id="tendency-badge">--</span>
+            <input type="range" id="threshold-slider" min="1.05" max="2.0" step="0.05" value="1.35">
+            <span id="threshold-val">1.35x</span>
+            <input type="range" id="interval-slider" min="100" max="2000" step="50" value="250">
+            <span id="interval-val">250ms</span>
+            <canvas id="visualizer-canvas" height="60"></canvas>
+            <span id="current-time">0.0s / 0.0s</span>
+            <span id="total-triggers">0</span>
+            <span id="active-agent">IDLE</span>
+            <span id="next-trigger">--</span>
+            <div class="progress-container"><div class="progress-bar" id="progress-bar"></div></div>
+            <div class="log-panel" id="log-panel"></div>
         </div>
-        <div class="screen-wrapper">
-            <video id="player-2" class="screen" playsinline></video>
-        </div>
-        <div class="screen-wrapper">
-            <video id="player-3" class="screen" playsinline></video>
+
+        <!-- 上演キャンバス (16:9 / 最大 1920x1080) -->
+        <div class="display-area-wrapper">
+            <div class="display-area">
+                <!-- Play A の3画面。Combination では使わないが、エンジンが参照するため残す -->
+                <div class="screen-container" id="normal-screens-container">
+                    <div class="screen-wrapper" id="wrapper-1">
+                        <span class="screen-label">SCREEN 1</span>
+                        <video id="video-1" class="screen" playsinline></video>
+                        <div class="onomatopoeia-overlay"><div class="ono-text" id="ono-text-1"></div></div>
+                    </div>
+                    <div class="screen-wrapper" id="wrapper-2">
+                        <span class="screen-label">SCREEN 2</span>
+                        <video id="video-2" class="screen" playsinline></video>
+                        <div class="onomatopoeia-overlay"><div class="ono-text" id="ono-text-2"></div></div>
+                    </div>
+                    <div class="screen-wrapper" id="wrapper-3">
+                        <span class="screen-label">SCREEN 3</span>
+                        <video id="video-3" class="screen" playsinline></video>
+                        <div class="onomatopoeia-overlay"><div class="ono-text" id="ono-text-3"></div></div>
+                    </div>
+                </div>
+
+                <!-- Play B: コラージュ -->
+                <div class="collage-wrapper" id="duet-collage-wrapper">
+                    <div id="duet-collage-container"></div>
+                    <div id="solo-video-wrap"><video id="solo-video" playsinline></video></div>
+                </div>
+
+                <!-- test-level2: 水道管パイプ台 -->
+                <div id="pipe-stage">
+                    <div id="pipe-conveyor"></div>
+                </div>
+            </div>
         </div>
     </div>
 
     <!-- 分析ダッシュボード (スクロールすると表示されるエリア) -->
     <div class="analysis-dashboard">
         <div class="dashboard-title-area">
-            <h2 class="dashboard-title">Real-Time Analysis & Execution Monitor <span style="font-size: 0.9rem; color: #8892b0; font-weight: normal; margin-left: 10px;">v1.12.2</span></h2>
+            <h2 class="dashboard-title">Real-Time Analysis &amp; Execution Monitor <span style="font-size: 0.9rem; color: var(--text-muted); font-weight: normal; margin-left: 10px;">v1.15.0</span></h2>
         </div>
-        
-        <!-- タイムラインセクション -->
-        <div class="timeline-section">
+
+        <!-- 音声レーン A -->
+        <div class="timeline-section" id="timeline-section-a" style="margin-bottom: 12px;">
             <div class="timeline-header">
-                <span class="timeline-track-name">Track: <span id="ana-track-name">None</span></span>
-                <span class="timeline-time">Time: <span id="ana-time">0.0s / 0.0s</span></span>
+                <span class="timeline-track-name" id="timeline-agent-label-a" style="color: #ff3366; font-weight: bold;">Agent A (Slicer / Left): <span id="ana-track-name-a" style="color: var(--text-muted); font-weight: normal;">None</span></span>
+                <span class="timeline-time">Time: <span id="ana-time-a">0.0s / 0.0s</span></span>
             </div>
             <div class="timeline-canvas-wrapper">
-                <canvas id="timeline-canvas" height="80"></canvas>
+                <canvas id="timeline-canvas-a" height="60"></canvas>
+            </div>
+        </div>
+
+        <!-- 音声レーン B -->
+        <div class="timeline-section" id="timeline-section-b">
+            <div class="timeline-header">
+                <span class="timeline-track-name" id="timeline-agent-label-b" style="color: #00ffaa; font-weight: bold;">Agent B (Ambient / Right): <span id="ana-track-name-b" style="color: var(--text-muted); font-weight: normal;">None</span></span>
+                <span class="timeline-time">Time: <span id="ana-time-b">0.0s / 0.0s</span></span>
+            </div>
+            <div class="timeline-canvas-wrapper">
+                <canvas id="timeline-canvas-b" height="60"></canvas>
             </div>
             <div class="timeline-legend">
                 <span class="legend-item"><span class="legend-color attack"></span>L4 強 (≥0.75 / アタック)</span>
@@ -394,59 +236,28 @@
                 <span class="legend-item"><span class="legend-color quiet"></span>L1 静 (&lt;0.25)</span>
             </div>
         </div>
-        
-        <!-- モニターカードグリッド -->
-        <div class="monitor-grid">
-            <!-- Screen 1 Status -->
-            <div class="monitor-card" id="card-screen-1">
-                <div class="card-header">SCREEN 1</div>
-                <div class="card-body">
-                    <div class="stat-row"><span class="stat-label">State:</span><span class="stat-val" id="scr1-state">IDLE</span></div>
-                    <div class="stat-row"><span class="stat-label">Video:</span><span class="stat-val" id="scr1-video">-</span></div>
-                    <div class="stat-row"><span class="stat-label">LMA (W,T,S,H):</span><span class="stat-val" id="scr1-lma">-</span></div>
-                    <div class="stat-row"><span class="stat-label">Activity Level:</span><span class="stat-val" id="scr1-activity">-</span></div>
-                    <div class="stat-row"><span class="stat-label">Rotation / Dir:</span><span class="stat-val" id="scr1-rot">-</span></div>
-                    <div class="stat-row"><span class="stat-label">Freezes:</span><span class="stat-val" id="scr1-freezes">-</span></div>
-                </div>
-            </div>
-            <!-- Screen 2 Status -->
-            <div class="monitor-card" id="card-screen-2">
-                <div class="card-header">SCREEN 2</div>
-                <div class="card-body">
-                    <div class="stat-row"><span class="stat-label">State:</span><span class="stat-val" id="scr2-state">IDLE</span></div>
-                    <div class="stat-row"><span class="stat-label">Video:</span><span class="stat-val" id="scr2-video">-</span></div>
-                    <div class="stat-row"><span class="stat-label">LMA (W,T,S,H):</span><span class="stat-val" id="scr2-lma">-</span></div>
-                    <div class="stat-row"><span class="stat-label">Activity Level:</span><span class="stat-val" id="scr2-activity">-</span></div>
-                    <div class="stat-row"><span class="stat-label">Rotation / Dir:</span><span class="stat-val" id="scr2-rot">-</span></div>
-                    <div class="stat-row"><span class="stat-label">Freezes:</span><span class="stat-val" id="scr2-freezes">-</span></div>
-                </div>
-            </div>
-            <!-- Screen 3 Status -->
-            <div class="monitor-card" id="card-screen-3">
-                <div class="card-header">SCREEN 3</div>
-                <div class="card-body">
-                    <div class="stat-row"><span class="stat-label">State:</span><span class="stat-val" id="scr3-state">IDLE</span></div>
-                    <div class="stat-row"><span class="stat-label">Video:</span><span class="stat-val" id="scr3-video">-</span></div>
-                    <div class="stat-row"><span class="stat-label">LMA (W,T,S,H):</span><span class="stat-val" id="scr3-lma">-</span></div>
-                    <div class="stat-row"><span class="stat-label">Activity Level:</span><span class="stat-val" id="scr3-activity">-</span></div>
-                    <div class="stat-row"><span class="stat-label">Rotation / Dir:</span><span class="stat-val" id="scr3-rot">-</span></div>
-                    <div class="stat-row"><span class="stat-label">Freezes:</span><span class="stat-val" id="scr3-freezes">-</span></div>
-                </div>
-            </div>
-            <!-- Decision Log Card -->
-            <div class="monitor-card log-card">
-                <div class="card-header">EXECUTIVE DECISION LOG</div>
-                <div class="card-body scroll-log" id="decision-log">
-                    <div class="log-line text-muted">Awaiting start...</div>
-                </div>
+
+        <!-- ライブ質感ベクトルマップ -->
+        <div id="lexmap-wrap">
+            <canvas id="lexmap-canvas"></canvas>
+            <div id="lexmap-legend">
+                <span><span class="mk sq" style="color:#ff5b6a"></span>Visuals 52</span>
+                <span><span class="mk sq" style="color:#f2a63a"></span>Sound 47</span>
+                <span><span class="mk ci" style="color:#37c9c1"></span>Onomatopoeia 82</span>
+                <span class="hint">再生中の 映像—語—音 が発光 · ホバーで関係 · ホイールで拡大</span>
             </div>
         </div>
-    </div>
-    
-    <!-- 音声用/不可視第4プレイヤー（HTML5 Audio） -->
-    <audio id="player-4"></audio>
 
-    <!-- メディアパスの設定 -->
+        <!-- 文字表示ログ -->
+        <div class="lexmap-log-wrap">
+            <div class="lexmap-log-title">Execution Log</div>
+            <div id="decision-log" class="lexmap-log"><div class="log-line text-muted">Awaiting start…</div></div>
+        </div>
+    </div>
+
+    <!-- 不可視のHTML5オーディオ -->
+    <audio id="audio-element"></audio>
+
     <script>
         const R2_BASE_URL = 'https://pub-b863fe2ba58a4525be0263e22ceb85a5.r2.dev/';
         const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
@@ -454,11 +265,28 @@
         let VIDEO_BASE_PATH = R2_BASE_URL;
         const AUDIO_BASE_PATH = isLocal ? "audios/" : R2_BASE_URL;
 
-        // 動画画質サフィックス: 起動時に detectVideoQuality() が回線速度で上書きする。
-        // 通常版 = Sss720p (NN-Sss720p.mp4) / 縮小版 = Sss360p (NN-Sss360p.mp4)
-        window.VIDEO_QUALITY_SUFFIX = 'Sss720p';
+        // 本番(index.html)は Combination 専用。起動ボタンは1つだけ。
+        window.SKINSLIDES_MAIN = true;
+
+        function updateAppScale() {
+            // 画角は 16:9 固定（基準 1920x1080）。横幅だけを基準にする。
+            //   ウィンドウ幅 >= 1920 → 1920px を保持（拡大はしない）
+            //   ウィンドウ幅 <  1920 → その幅にフィット
+            // 下限クランプを持たないため、どの画面幅でも切り取りが起きない。
+            const el = document.body || document.documentElement;
+            const baseW = parseFloat(getComputedStyle(el).getPropertyValue('--canvas-w')) || 1920;
+            // innerWidth は縦スクロールバー幅を含み1px単位の切り取り/横スクロールバーを生むため、
+            // 実際の表示領域幅(clientWidth)を使う。
+            const viewW = document.documentElement.clientWidth || window.innerWidth;
+            document.documentElement.style.setProperty('--app-scale', Math.min(1, viewW / baseW));
+        }
+        window.updateAppScale = updateAppScale;
+        window.addEventListener('resize', updateAppScale);
+        window.addEventListener('DOMContentLoaded', updateAppScale);
+        updateAppScale();
     </script>
-    <script src="player.js?v=1.12.2"></script>
-    <script src="logic.js?v=1.12.2"></script>
+    <script src="player.js?v=1.15.0"></script>
+    <script src="audio_trigger_logic.js?v=1.15.0"></script>
+    <script src="lexicon_live.js?v=1.15.0"></script>
 </body>
 </html>

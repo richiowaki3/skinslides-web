@@ -1,5 +1,8 @@
 # Local-only raw audio assets (production streams these from Cloudflare R2 instead)
 audios/
 
+# Local-only 360p video copies for offline testing (production streams from Cloudflare R2)
+videos/
+
 # Local deployment scripts containing environment-specific credentials
 deploy_to_z_drive.bat

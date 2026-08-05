@@ -2,7 +2,7 @@ import http.server
 import socketserver
 import os
 
-PORT = 8000
+PORT = int(os.environ.get("PORT", 8000))
 
 class CORSRequestHandler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
@@ -89,9 +89,15 @@ class CORSRequestHandler(http.server.SimpleHTTPRequestHandler):
             f.close()
             return None
 
+# 動画は Range リクエストで長時間コネクションを占有するため、シングルスレッドだと
+# その間 JS/JSON など他のリクエストが全てブロックされ、ページが起動しない。
+class ThreadedHTTPServer(socketserver.ThreadingTCPServer):
+    daemon_threads = True
+
+
 def run_server():
     socketserver.TCPServer.allow_reuse_address = True
-    with socketserver.TCPServer(("", PORT), CORSRequestHandler) as httpd:
+    with ThreadedHTTPServer(("", PORT), CORSRequestHandler) as httpd:
         print(f"\n=======================================================")
         print(f" skinslides Local HTTP Server (CORS & Range Requests Enabled)")
         print(f" Serving at: http://localhost:{PORT}/")

@@ -58,7 +58,8 @@ async function preloadAllAudios(basePath, onProgress) {
         if (id.includes("scene2end")) {
             return id.replace("scene2end", "scene2End") + ".mp3";
         }
-        return id.toUpperCase() + ".mp3";
+        // 先頭の t のみ大文字化して実ファイル名の大小に合わせる（例: t525fix -> T525fix.mp3）
+        return id.replace(/^t/, "T") + ".mp3";
     });
     const totalCount = filesToLoad.length;
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
@@ -90,10 +91,19 @@ async function loadMetadata() {
     try {
         // Local videos folder auto-detection
         try {
-            const testRes = await fetch("videos/05-Sss720p.mp4", { method: 'HEAD' });
-            if (testRes.ok) {
-                console.log("[demo] Local /videos/ folder detected. Using local videos same-origin source.");
+            // 720p / 360p のどちらかが置いてあればローカルとみなす（縮小版のみの構成にも対応）
+            const SUFFIXES = ["Sss720p", "Sss360p"];
+            const probes = await Promise.all(
+                SUFFIXES.map(sfx =>
+                    fetch(`videos/05-${sfx}.mp4`, { method: 'HEAD' }).then(r => r.ok).catch(() => false))
+            );
+            const localSuffix = SUFFIXES[probes.indexOf(true)];
+            if (localSuffix) {
+                console.log(`[demo] Local /videos/ folder detected (${localSuffix}). Using local videos same-origin source.`);
                 VIDEO_BASE_PATH = "videos/";
+                // このページは detectVideoQuality() を持たないため、実在した画質をここで確定させる。
+                // (未設定だと全箇所が既定の Sss720p を参照し、360pのみの構成では全て404になる)
+                window.VIDEO_QUALITY_SUFFIX = localSuffix;
                 addDecisionLog("Local videos folder detected. Using local videos (no CORS restriction, 50x Web Audio boost active).", "success");
             }
         } catch (e) {
@@ -110,6 +120,9 @@ async function loadMetadata() {
 
         // 実在する動画だけをプールに残す（欠番選択による一瞬の黒画面を防ぐ）
         await filterAvailableVideos(VIDEO_BASE_PATH);
+
+        // パイプ連結用の入り口/出口の辺データ
+        await loadPipeEdges();
 
         // 動画の4レベル分類
         classifyVideos();
@@ -136,22 +149,29 @@ async function loadMetadata() {
         const playBtn = document.getElementById("play-btn");
         const cutupBtn = document.getElementById("cutup-btn");
         
-        if (preloadProgress) preloadProgress.textContent = "0% (0/18 videos)";
-        if (overlayProgress) overlayProgress.textContent = "0%";
-        await window.preloadAllVideos(VIDEO_BASE_PATH, (loaded, total) => {
-            const pct = Math.round((loaded / total) * 100);
-            if (preloadProgress) preloadProgress.textContent = `${pct}% (${loaded}/${total} videos)`;
-            if (overlayProgress) overlayProgress.textContent = `${pct}%`;
-        });
+        // FASTモード(?fast=1): プリロードを飛ばして即ボタン表示。test-level2の動作確認用。
+        // (test-level2は動画をR2から直接ストリーミングし、動画終了で進むため音声・事前DL不要)
+        const FAST_TEST = new URLSearchParams(location.search).has("fast");
+        if (!FAST_TEST) {
+            if (preloadProgress) preloadProgress.textContent = "0% (0/18 videos)";
+            if (overlayProgress) overlayProgress.textContent = "0%";
+            await window.preloadAllVideos(VIDEO_BASE_PATH, (loaded, total) => {
+                const pct = Math.round((loaded / total) * 100);
+                if (preloadProgress) preloadProgress.textContent = `${pct}% (${loaded}/${total} videos)`;
+                if (overlayProgress) overlayProgress.textContent = `${pct}%`;
+            });
 
-        // 音響のAudioBufferプリロードを一括開始
-        if (preloadProgress) preloadProgress.textContent = "0% (0/38 audios)";
-        if (overlayProgress) overlayProgress.textContent = "0%";
-        await preloadAllAudios(AUDIO_BASE_PATH, (loaded, total) => {
-            const pct = Math.round((loaded / total) * 100);
-            if (preloadProgress) preloadProgress.textContent = `${pct}% (${loaded}/${total} audios)`;
-            if (overlayProgress) overlayProgress.textContent = `${pct}%`;
-        });
+            // 音響のAudioBufferプリロードを一括開始
+            if (preloadProgress) preloadProgress.textContent = "0% (0/38 audios)";
+            if (overlayProgress) overlayProgress.textContent = "0%";
+            await preloadAllAudios(AUDIO_BASE_PATH, (loaded, total) => {
+                const pct = Math.round((loaded / total) * 100);
+                if (preloadProgress) preloadProgress.textContent = `${pct}% (${loaded}/${total} audios)`;
+                if (overlayProgress) overlayProgress.textContent = `${pct}%`;
+            });
+        } else {
+            console.warn("[demo] FAST test mode: プリロードをスキップ(test-level2はR2から直接再生)。");
+        }
         
         if (preloadStatus) {
             preloadStatus.style.color = "var(--accent-green)";
@@ -194,6 +214,43 @@ async function loadMetadata() {
                     if (playBtn) playBtn.style.display = "block";
                     if (cutupBtn) cutupBtn.style.display = "block";
                     startCutUpPlayback();
+                });
+            }
+            // special: 動画90/91/92 と音声T525/526/527 を対でループ再生
+            const specialBtn = document.getElementById("choose-special");
+            if (specialBtn) {
+                specialBtn.addEventListener("click", () => {
+                    if (overlay) {
+                        overlay.style.opacity = "0";
+                        setTimeout(() => { overlay.style.display = "none"; }, 500);
+                    }
+                    startSpecialScene();
+                });
+            }
+            // Combination: Play B(2分) と test-level2(音声1曲) を交互に、数巡ごとにスペシャル
+            const combiBtn = document.getElementById("choose-combination");
+            if (combiBtn) {
+                combiBtn.addEventListener("click", () => {
+                    if (overlay) {
+                        overlay.style.opacity = "0";
+                        setTimeout(() => { overlay.style.display = "none"; }, 500);
+                    }
+                    if (playBtn) playBtn.style.display = "block";
+                    startCombination();
+                });
+            }
+            // test-level2: 水道管パイプ (向き付き動画をレベル2 onsetで連結する再生テスト)
+            const testL2Btn = document.getElementById("choose-test-level2");
+            if (testL2Btn) {
+                testL2Btn.addEventListener("click", () => {
+                    if (overlay) {
+                        overlay.style.opacity = "0";
+                        setTimeout(() => { overlay.style.display = "none"; }, 500);
+                    }
+                    if (playBtn) playBtn.style.display = "block";
+                    if (modeSelect) modeSelect.value = "test-level2";
+                    enterTestLevel2();
+                    playSequence();
                 });
             }
         }, 500);
@@ -241,8 +298,9 @@ const ALLOWED_TRACKS_SET = new Set([
     "t510", "t511", "t512", "t513", "t514", "t515", "t516", "t517", 
     "t518", "t519", "t520", "t521", "t522", "t523", "t524", "t525", "t526", 
     "t528", "t529", "t530", "t531", "t532", "t533", "t535", "t536", "t537", 
-    "t538", "t540", "t541", "t538_00", "t538_0", "t538_01", "t538_1", 
-    "t538_02", "t538_2"
+    "t538", "t540", "t541", "t538_00", "t538_0", "t538_01", "t538_1",
+    "t538_02", "t538_2",
+    "t525fix", "t526fix", "t527fix" // Agent B 専用ノンストップ枠
 ]);
 
 function populateTrackSelect() {
@@ -292,6 +350,17 @@ function logMessage(type, message) {
     
     logPanel.appendChild(entry);
     logPanel.scrollTop = logPanel.scrollHeight;
+
+    // マップ下の可視ログにもミラー（Play B のライブ活動を表示）
+    const dl = document.getElementById("decision-log");
+    if (dl) {
+        const l = document.createElement("div");
+        l.className = "log-line " + type.toLowerCase();
+        l.textContent = `[${timeStr}] [${type}] ${message}`;
+        dl.appendChild(l);
+        dl.scrollTop = dl.scrollHeight;
+        while (dl.children.length > 120) dl.removeChild(dl.firstChild);
+    }
 }
 
 // Track loader
@@ -512,17 +581,20 @@ function playSequence() {
         logMessage("CONTROL", "Sequence started");
         
         // タイムライン冒頭の黒画面を防ぐため、初期状態で全画面にLevel 1（静寂）動画をロード
-        const initialQuietEvent = {
-            id: "initial_quiet",
-            time_sec: 0,
-            type: "静寂",
-            strength: 0.1,
-            onomatopoeia: "しんしん"
-        };
-        let startChosen = new Set();
-        [1, 2, 3].forEach(screenNum => {
-            reactScreenWithVideo(screenNum, initialQuietEvent, startChosen);
-        });
+        // (test-level2 は独自のパイプ台を使うため、通常3画面の初期ロードはスキップ)
+        if (!(modeSelect && modeSelect.value === "test-level2")) {
+            const initialQuietEvent = {
+                id: "initial_quiet",
+                time_sec: 0,
+                type: "静寂",
+                strength: 0.1,
+                onomatopoeia: "しんしん"
+            };
+            let startChosen = new Set();
+            [1, 2, 3].forEach(screenNum => {
+                reactScreenWithVideo(screenNum, initialQuietEvent, startChosen);
+            });
+        }
         
         // Start precision loop
         requestAnimationFrame(updateLoop);
@@ -632,6 +704,7 @@ function startCutUpPlayback() {
     }
     
     isCutUpPlaying = true;
+    soloBActive = false; // ソロ状態を毎回リセット（前回の途中停止対策）
     document.body.classList.add("is-playing");
     if (cutupButton) {
         cutupButton.textContent = "Stop Cut-up Test";
@@ -683,6 +756,9 @@ function startCutUpPlayback() {
 
 function stopCutUpPlayback() {
     isCutUpPlaying = false;
+    soloBActive = false;
+    hideSoloVideo();
+    if (window.LexMap) LexMap.clearAll(); // マップを俯瞰へ戻す（発光クリア）
     document.body.classList.remove("is-playing");
     if (cutupButton) {
         cutupButton.textContent = "Start Audio Cut-up Test";
@@ -750,6 +826,36 @@ function stopCutUpPlayback() {
     logMessage("CONTROL", "Audio Cut-up Test stopped");
 }
 
+// Agent B が T525fix/T526fix/T527fix を選んだ間だけ true。この間 Agent A は再生されない。
+let soloBActive = false;
+const FIX_SOLO_TRACKS = new Set(["t525fix", "t526fix", "t527fix"]);
+// fix枠 → センター投影する特殊動画（720p・回転無し）の番号。番号順で対応。
+const SOLO_VIDEO_MAP = { "t525fix": "90", "t526fix": "91", "t527fix": "92" };
+
+// ソロ用: 特殊動画を画面センターに投影（コラージュは隠す）。全尺(約7分)再生後は
+// 音トラック終了→次スライスで非fixが選ばれてソロ解除され、自動で通常シーンへ戻る。
+function showSoloVideo(normName) {
+    const wrap = document.getElementById("solo-video-wrap");
+    const vid = document.getElementById("solo-video");
+    if (!wrap || !vid) return;
+    const num = SOLO_VIDEO_MAP[normName] || "90";
+    // 90/91/92 も通常ライブラリと同じ p 付き命名 (90-Sss720p.mp4 / 90-Sss360p.mp4) に統一済み。
+    // 品質選択(Sss720p/Sss360p)にそのまま追従する。
+    const soloSuffix = window.VIDEO_QUALITY_SUFFIX || "Sss720p";
+    vid.src = VIDEO_BASE_PATH + `${num}-${soloSuffix}.mp4` + (window.VIDEO_CACHE_BUST || "");
+    vid.loop = false;
+    wrap.classList.add("active");
+    if (collageContainer) collageContainer.style.opacity = "0";
+    vid.play().catch(e => console.warn("[demo] solo video play failed:", e));
+}
+function hideSoloVideo() {
+    const wrap = document.getElementById("solo-video-wrap");
+    const vid = document.getElementById("solo-video");
+    if (vid) { try { vid.pause(); } catch (e) {} vid.removeAttribute("src"); if (vid.load) vid.load(); }
+    if (wrap) wrap.classList.remove("active");
+    if (collageContainer) collageContainer.style.opacity = "1";
+}
+
 function playNextCutUpSlice(agentId) {
     if (!isCutUpPlaying) return;
     
@@ -760,8 +866,13 @@ function playNextCutUpSlice(agentId) {
         return;
     }
     
-    // Pick random track
-    const randomFile = fileKeys[Math.floor(Math.random() * fileKeys.length)];
+    // Pick random track — fix枠(ノンストップ)は Agent B 専用。Agent A の候補からは除外する。
+    let pickKeys = fileKeys;
+    if (agentId === "AgentA") {
+        pickKeys = fileKeys.filter(f => !FIX_SOLO_TRACKS.has(f.replace(/\.(aif|aiff|mp3|wav)$/i, "").toLowerCase()));
+        if (pickKeys.length === 0) pickKeys = fileKeys;
+    }
+    const randomFile = pickKeys[Math.floor(Math.random() * pickKeys.length)];
     const audioBuffer = window.audioBufferCache[randomFile];
     
     // Find metadata
@@ -770,7 +881,37 @@ function playNextCutUpSlice(agentId) {
         const normRandFile = randomFile.replace(/\.mp3$/i, '').toLowerCase();
         return normFileId === normRandFile;
     });
-    
+
+    // --- Agent B ノンストップ枠 (T525fix/T526fix/T527fix) ---
+    const normName = randomFile.replace(/\.(aif|aiff|mp3|wav)$/i, "").toLowerCase();
+    const isBSolo = (agentId === "AgentB") && FIX_SOLO_TRACKS.has(normName);
+
+    // ソロ中は Agent A を再生しない（解除時に B が再開させる）
+    if (agentId === "AgentA" && soloBActive) {
+        return;
+    }
+    if (agentId === "AgentB") {
+        if (isBSolo && !soloBActive) {
+            // ソロ開始: Agent A を停止（音・映像・次スライス予約をクリア）
+            soloBActive = true;
+            if (cutUpTimerA) { clearTimeout(cutUpTimerA); cutUpTimerA = null; }
+            if (cutUpNodeA) { try { cutUpNodeA.stop(); } catch (e) {} cutUpNodeA = null; }
+            cutUpVideoTimeoutsA.forEach(t => clearTimeout(t));
+            cutUpVideoTimeoutsA = [];
+            const elA = document.getElementById("ana-track-name-a");
+            if (elA) elA.textContent = `— paused (${randomFile} solo)`;
+            if (window.LexMap) LexMap.setTrack("A", "");
+            showSoloVideo(normName); // fix枠に対応する特殊動画を720p・回転無し・センター投影
+            logMessage("CONTROL", `[AGENT B] Nonstop solo: ${randomFile} — Agent A paused`);
+        } else if (!isBSolo && soloBActive) {
+            // ソロ解除: 特殊動画を消してコラージュへ戻り、Agent A を再開
+            soloBActive = false;
+            hideSoloVideo();
+            logMessage("CONTROL", "Agent B solo ended — resuming Agent A");
+            setTimeout(() => { if (isCutUpPlaying) playNextCutUpSlice("AgentA"); }, 50);
+        }
+    }
+
     // フィボナッチ数列による再生尺（秒）の決定
     const FIBONACCI_SECS = [1, 2, 3, 5, 8, 13, 21, 34, 55, 89];
     const validFibs = FIBONACCI_SECS.filter(f => f <= audioBuffer.duration);
@@ -788,6 +929,9 @@ function playNextCutUpSlice(agentId) {
         const pool = validFibs.slice(splitIndex);
         targetDuration = pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : validFibs[validFibs.length - 1];
     }
+
+    // ノンストップ枠は全尺再生（スライスせず頭から最後まで）
+    if (isBSolo) targetDuration = audioBuffer.duration;
 
     let targetStartTime = 0.0;
     let events = [];
@@ -828,6 +972,20 @@ function playNextCutUpSlice(agentId) {
             }));
     }
     
+    // ノンストップ枠は全尺を先頭から途切れず再生（スライスせず全イベントを使う）
+    if (isBSolo) {
+        targetStartTime = 0;
+        targetDuration = audioBuffer.duration;
+        events = (trackData && trackData.triggers.events ? trackData.triggers.events : []).map((e, index) => ({
+            id: `cutup_event_${index}_${Date.now()}_${agentId}`,
+            time_sec: e.time_sec,
+            type: e.type,
+            strength: e.strength,
+            onomatopoeia: e.onomatopoeia,
+            triggered: false
+        }));
+    }
+
     const agentLabel = agentId === "AgentA" ? "AGENT A (Slicer)" : "AGENT B (Ambient)";
     logMessage("CUT-UP", `[${agentLabel}] Playing slice: ${randomFile} [${targetStartTime.toFixed(1)}s - ${(targetStartTime + targetDuration).toFixed(1)}s] (${targetDuration.toFixed(1)}s)`);
     
@@ -871,6 +1029,7 @@ function playNextCutUpSlice(agentId) {
         // Update track name UI
         const trackNameElA = document.getElementById("ana-track-name-a");
         if (trackNameElA) trackNameElA.textContent = randomFile;
+        if (window.LexMap) LexMap.setTrack('A', randomFile); // ライブマップ: 現在の音トラックを点灯
         
         // Clear old timeouts
         cutUpVideoTimeoutsA.forEach(t => clearTimeout(t));
@@ -883,7 +1042,7 @@ function playNextCutUpSlice(agentId) {
                 if (!isCutUpPlaying) return;
                 event.triggered = true;
                 logMessage("TRIGGER", `[AGENT A - Slicer] ${event.onomatopoeia} (Type: ${event.type}, Strength: ${event.strength.toFixed(2)})`);
-                triggerCollageVideo(event);
+                triggerCollageVideo(event, "A");
             }, delayMs);
             cutUpVideoTimeoutsA.push(timeoutId);
         });
@@ -903,6 +1062,7 @@ function playNextCutUpSlice(agentId) {
         // Update track name UI
         const trackNameElB = document.getElementById("ana-track-name-b");
         if (trackNameElB) trackNameElB.textContent = randomFile;
+        if (window.LexMap) LexMap.setTrack('B', randomFile); // ライブマップ: 現在の音トラックを点灯
         
         // Clear old timeouts
         cutUpVideoTimeoutsB.forEach(t => clearTimeout(t));
@@ -915,7 +1075,7 @@ function playNextCutUpSlice(agentId) {
                 if (!isCutUpPlaying) return;
                 event.triggered = true;
                 logMessage("TRIGGER", `[AGENT B - Ambient] ${event.onomatopoeia} (Type: ${event.type}, Strength: ${event.strength.toFixed(2)})`);
-                triggerCollageVideo(event);
+                triggerCollageVideo(event, "B");
             }, delayMs);
             cutUpVideoTimeoutsB.push(timeoutId);
         });
@@ -1085,6 +1245,8 @@ function updateLoop() {
         updateNextTriggerDisplay();
     } else if (mode === "realtime") {
         detectRealtimePeak(currentTime);
+    } else if (mode === "test-level2") {
+        updatePipeLevel2(currentTime);
     }
 
     if (audioElement.ended) {
@@ -1161,7 +1323,14 @@ async function filterAvailableVideos(basePath) {
     const available = results.filter(Boolean);
     const removed = videoMetadataPool.length - available.length;
     if (available.length === 0) {
-        console.warn("[demo] Availability check returned 0 playable videos — keeping full pool (probe likely failed).");
+        // HEADプローブが全滅（CORS/ネットワーク障害）。全81本を維持すると R2 に無い
+        // 90-97 等の欠番が選ばれて404（黒画面）になるため、R2に実在する既知52本へ絞る。
+        // スナップショット(2026-07-05 ブラウザHEAD調査)。R2の内容が変わったら更新すること。
+        const KNOWN_AVAILABLE = new Set([1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,38,39,40,41,44,45,46,47,48,49,50,51,52,53,54,56]);
+        const fallback = videoMetadataPool.filter(v => { const m = v[0].match(/(\d+)/); return m && KNOWN_AVAILABLE.has(parseInt(m[1], 10)); });
+        console.warn(`[demo] Availability probe failed (0 reachable) — falling back to ${fallback.length} known-available videos (excluding phantom 90-97 etc.).`);
+        videoMetadataPool = fallback.length ? fallback : videoMetadataPool;
+        if (window.addDecisionLog) window.addDecisionLog(`Availability probe failed — using ${videoMetadataPool.length} known-available videos.`, "warning");
         return;
     }
     videoMetadataPool = available;
@@ -1731,8 +1900,9 @@ function addDecisionLog(message, type = "info") {
 window.addDecisionLog = addDecisionLog; // player.jsからも呼べるようにグローバル化
 
 // Duet Collage Trigger and helper functions (Pattern B Test Only - Pre-cropped video version)
-function triggerCollageVideo(event) {
+function triggerCollageVideo(event, agentId) {
     if (!isCutUpPlaying || !collageContainer) return;
+    if (soloBActive) return; // ソロ中(fix枠)はセンター投影の特殊動画のみ。コラージュは生成しない
     
     // Determine audio level
     let audioLevel = 1;
@@ -1754,6 +1924,8 @@ function triggerCollageVideo(event) {
     if (match) {
         finalFileName = `${match[1]}-Sss720p.mp4`;
     }
+    // ライブマップ: 発火した映像とオノマトペをフラッシュ（映像—語—音の三者が光る）
+    if (window.LexMap && match) LexMap.flash(match[1], event.onomatopoeia, agentId);
     const blobUrl = window.videoBlobCache[fileName] || (VIDEO_BASE_PATH + finalFileName);
     
     // 短辺 S をフィボナッチサイズから選択し、長辺は 2 * S とすることでアスペクト比 1:2 / 2:1 を固定する
@@ -1910,32 +2082,42 @@ function triggerCollageVideo(event) {
     // コンテナへ追加
     collageContainer.appendChild(wrapperEl);
     
-    // 4スロットマッピング：空いているスロット、または最も古いスロットを押し出し (Item 6)
+    // 激しさレベル1,2の動画は「1枚を最後まで再生」するため、再生終了まで押し出しから保護する
+    wrapperEl.dataset.level = String(audioLevel);
+    wrapperEl._protected = (audioLevel <= 2);
+
+    // 4スロットマッピング：空きスロット、無ければ保護されていない最古スロットを押し出し (Item 6)
     let targetIndex = activeCollageSlots.findIndex(s => s === null);
     if (targetIndex === -1) {
-        // 空きがない場合はラウンドロビンで押し出し
-        targetIndex = nextSlotIndex;
-        nextSlotIndex = (nextSlotIndex + 1) % 4;
-        
+        // ラウンドロビン順に、保護されていない(L3/L4 または 再生終了済み)スロットを探して押し出す
+        for (let i = 0; i < 4; i++) {
+            const idx = (nextSlotIndex + i) % 4;
+            const w = activeCollageSlots[idx];
+            if (!w || !w._protected) { targetIndex = idx; break; }
+        }
+        if (targetIndex === -1) targetIndex = nextSlotIndex; // 4枠すべて保護中なら通常押し出し
+        nextSlotIndex = (targetIndex + 1) % 4;
+
         // 古いラッパーをフェードアウトして除去
         const oldWrapper = activeCollageSlots[targetIndex];
         if (oldWrapper) {
             oldWrapper.style.opacity = 0;
             setTimeout(() => { oldWrapper.remove(); }, 500);
-            
+
             // collageVideos からも古いものを除外
             const vIdx = collageVideos.indexOf(oldWrapper);
             if (vIdx > -1) collageVideos.splice(vIdx, 1);
         }
     }
-    
+
     activeCollageSlots[targetIndex] = wrapperEl;
     collageVideos.push(wrapperEl);
-    
+
     // 再生完了した動画は最後のフレームで静止 (ステータスをFREEZINGに切り替え)
     videoEl.onended = () => {
         videoEl.pause();
         wrapperEl.dataset.state = "FREEZING";
+        wrapperEl._protected = false; // 最後まで再生し終えたので押し出し可に
         updateMonitorUI();
     };
     
@@ -1961,3 +2143,523 @@ document.addEventListener("keydown", (e) => {
         if (isCutUpPlaying) stopCutUpPlayback();
     }
 });
+
+
+/* =====================================================================
+ * test-level2 : 水道管パイプ (Pipe Mania) 再生テスト
+ *  - 3本の独立したパイプ(フロー)が同時に伸びる。画面には各フローの
+ *    「現在再生中の1枚」だけ表示 → 計3枚が同時再生。
+ *  - 各フローは237マスのグリッド上を水道管ゲーム原理で蛇行(474x237ドミノ、
+ *    出→次の入りを連結、はみ出さない向きへ回転)。他フローのカードは避ける。
+ *  - 進行: 各フロー独立。動画終了で次カードへ(旧カードはフェイドアウト、
+ *    新カードはフェイドイン=クロスフェード)。
+ *  - 素材は向き付き動画(L2R/R2L)のみ。S・90〜97は除外。
+ *    (「レベル2」は連結の合図ではなく"音"の話。音フィルタは別途対応)
+ * ===================================================================== */
+const PIPE_CARD_W = 474, PIPE_CARD_H = 237, PIPE_FLOWS = 3;
+const PIPE = {
+    active: false,
+    pool: [],           // 向き付き動画(L2R/R2L)の連結素材プール
+    flows: [],           // 3本のフロー {id, head:{cell0,flow}|null, card:{el,cells}|null, lastFile}
+    count: 0,
+};
+function pipeLevelOf(event) {
+    if (event.strength >= 0.75 || event.type === "アタック") return 4;
+    if (event.strength >= 0.5) return 3;
+    if (event.strength >= 0.25) return 2;
+    return 1;
+}
+
+function pipeVideoSrc(fileName) {
+    const m = fileName.match(/(\d+)\.(mov|mp4)/i);
+    const finalName = m ? `${m[1]}-${window.VIDEO_QUALITY_SUFFIX || "Sss720p"}.mp4` : fileName;
+    if (window.videoBlobCache && window.videoBlobCache[fileName]) return window.videoBlobCache[fileName];
+    return VIDEO_BASE_PATH + finalName + (window.VIDEO_CACHE_BUST || "");
+}
+
+/* ── 入り口/出口の辺 ──────────────────────────────────────────────────
+ *   ┏a1-a-a2┓     上=a / 右=b / 下=c / 左=d
+ *   d       b      a,c は辺上の位置を持つ: a1=左25% / a=中央50% / a2=右75%
+ *   ┗c1-c-c2┛     b,d は中央のみ(CSVにも b1/d2 等は現れない)
+ * 連結規則: 出た辺の反対側から次の動画に入る(b→d / d→b / a→c / c→a)。
+ * 次の動画はその辺の隣に置かれる。動画は回転させない。
+ * ------------------------------------------------------------------ */
+const PIPE_OPPOSITE = { a: "c", c: "a", b: "d", d: "b" };
+const pipeEdgeBase = (e) => (e || "").charAt(0);
+// 辺上の位置を幅に対する割合で返す(a1/c1=0.25, a/c=0.5, a2/c2=0.75)
+const pipeEdgeFrac = (e) => (e && e.length > 1) ? (e.charAt(1) === "1" ? 0.25 : 0.75) : 0.5;
+
+// skinslides-in-out.csv: 「ファイル名,入り口の辺,出口の辺」
+async function loadPipeEdges() {
+    PIPE.edges = {};
+    try {
+        const res = await fetch("skinslides-in-out.csv" + (window.VIDEO_CACHE_BUST || ""));
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        (await res.text()).split(/\r?\n/).forEach(line => {
+            const [file, inE, outE] = line.split(",").map(s => (s || "").trim());
+            const m = file && file.match(/(\d+)/);
+            if (!m || !inE || !outE) return;                       // 末尾の空行・辺なし行は無視
+            if (!PIPE_OPPOSITE[pipeEdgeBase(inE)] || !PIPE_OPPOSITE[pipeEdgeBase(outE)]) return;
+            PIPE.edges[parseInt(m[1], 10)] = { in: inE, out: outE };
+        });
+        console.log(`[pipe] 入出辺データ ${Object.keys(PIPE.edges).length} 本を読み込み`);
+    } catch (e) {
+        console.warn("[pipe] skinslides-in-out.csv の読み込みに失敗。パイプ連結は無効。", e);
+    }
+}
+
+function buildPipePools() {
+    PIPE.pool = [];
+    videoMetadataPool.forEach(v => {
+        const nm = (v[0].match(/(\d+)/) || [])[1];
+        const num = nm ? parseInt(nm, 10) : 0;
+        const e = PIPE.edges && PIPE.edges[num];
+        if (!e) return;                           // 入出辺が未定義の動画は連結できないので除外
+        PIPE.pool.push({ data: v, num, in: e.in, out: e.out });
+    });
+}
+
+// ── 配置計算(回転なし。カードは2:1の横向きのまま、大きさだけ変える) ──
+const PIPE_STAGE_W = 3840, PIPE_STAGE_H = 2160;
+
+// カードの大きさ(約0.618倍ずつの階段)。1枚ごとに決め、再生中は変えない。
+const PIPE_SIZES = [
+    { w: 1240, h: 620 }, { w: 766, h: 383 }, { w: 474, h: 237 },
+    { w: 293, h: 146 },  { w: 181, h: 90 },  { w: 112, h: 56 },
+];
+const PIPE_SIZE_DEFAULT = 2;                         // 474x237
+
+// 直前カード(rect/curSize)の outEdge から出て、次カード(nextSize)へ inEdge から入る左上座標。
+// 左右に抜けるときは辺の中心どうしを、上下に抜けるときは辺上の位置(a1/a/a2)どうしを合わせる。
+function pipePlaceNext(rect, curSize, outEdge, inEdge, nextSize) {
+    const ob = pipeEdgeBase(outEdge);
+    if (ob === "b" || ob === "d") {
+        const top = rect.top + curSize.h / 2 - nextSize.h / 2;
+        return ob === "b"
+            ? { left: rect.left + curSize.w, top }
+            : { left: rect.left - nextSize.w, top };
+    }
+    const left = rect.left + pipeEdgeFrac(outEdge) * curSize.w - pipeEdgeFrac(inEdge) * nextSize.w;
+    return ob === "c"
+        ? { left, top: rect.top + curSize.h }
+        : { left, top: rect.top - nextSize.h };
+}
+
+// 画面内に収まるか(フロー同士の重なりは許容する)
+const pipeRectFits = (r, s) =>
+    r.left >= 0 && r.left + s.w <= PIPE_STAGE_W &&
+    r.top >= 0 && r.top + s.h <= PIPE_STAGE_H;
+
+// 大きさの段を1枚ごとに決める。数枚は同じ段に留まり、ときどき隣の段へ、まれに跳ぶ。
+// → 「短い尺が連続する」「長い尺でゆっくり変わる」というまとまりが生まれる。
+function pipeNextSizeIdx(f) {
+    const r = Math.random();
+    if (r < 0.55) return f.sizeIdx;                                   // 同じ段が続く
+    if (r > 0.97) return Math.floor(Math.random() * PIPE_SIZES.length); // まれに跳ぶ
+    const i = f.sizeIdx + (Math.random() < 0.5 ? 1 : -1);             // 上下は対称
+    return Math.max(0, Math.min(PIPE_SIZES.length - 1, i));
+}
+
+// 大きいカードは長い尺・穏やかな動き、小さいカードは短い尺・激しい動きを好む。
+function pipeTempoWeight(p, sizeIdx) {
+    const big  = 1 - sizeIdx / (PIPE_SIZES.length - 1);      // 1=最大 0=最小
+    const long = Math.min((p.data[1] || 10) / 30, 1);        // 1=30秒以上
+    const intense = Math.min(((p.data[5] || 0) + (p.data[7] || 0)) / 18, 1);
+    return 0.25 + (1 - Math.abs(big - long)) + 0.6 * (1 - Math.abs(big - (1 - intense)));
+}
+
+// 3本の蛇行が離れすぎず重なりすぎず絡むように、他フローとの距離で重みを付ける。
+const PIPE_NEAR = 500, PIPE_FAR = 1400;
+function pipeFlowAffinity(f, rect, size) {
+    const cx = rect.left + size.w / 2, cy = rect.top + size.h / 2;
+    let minD = Infinity;
+    for (const o of PIPE.flows) {
+        if (o === f || !o.rect || !o.size) continue;
+        const ox = o.rect.left + o.size.w / 2, oy = o.rect.top + o.size.h / 2;
+        minD = Math.min(minD, Math.hypot(cx - ox, cy - oy));
+    }
+    if (!isFinite(minD)) return 1;
+    if (minD < PIPE_NEAR) return 0.25 + 0.75 * (minD / PIPE_NEAR);   // 近すぎ → 離れる
+    if (minD > PIPE_FAR)  return Math.max(0.25, PIPE_FAR / minD);    // 遠すぎ → 近づく
+    return 1.4;                                                      // ほどよく絡む距離
+}
+
+/* 次カードを重みづけで選ぶ。
+ *   必須: 入り口の辺が requiredIn と一致し、置いても画面からはみ出さないこと。
+ *   重み: ・その先にもう1枚置けない手(行き止まり)は大きく減点
+ *         → 端に近づくと、まっすぐ進む手が自然に落ちて曲がる手が残る(=折り返し)
+ *         ・来た道をすぐ戻るUターンは抑制
+ *         ・直角に折れる手は少し優遇して蛇行に変化をつける
+ *         ・尺/激しさとカードの大きさの相性、他フローとの距離も加味
+ */
+function pickNextPipe(f, requiredIn, size) {
+    const travel = pipeEdgeBase(f.out);              // 直前に進んだ向き
+    const cands = [];
+    let total = 0;
+    for (const p of PIPE.pool) {
+        if (pipeEdgeBase(p.in) !== requiredIn) continue;
+        const rect = pipePlaceNext(f.rect, f.size, f.out, p.in, size);
+        if (!pipeRectFits(rect, size)) continue;
+        const exit = pipeEdgeBase(p.out);
+        // この先にもう1枚置ける見込みがあるか(次の入り口は中央・同じ大きさと仮定)
+        const ahead = pipePlaceNext(rect, size, p.out, PIPE_OPPOSITE[exit], size);
+        let w = pipeRectFits(ahead, size) ? 1 : 0.05;
+        if (exit === PIPE_OPPOSITE[travel]) w *= 0.15;                 // Uターン抑制
+        else if (exit !== travel) w *= 1.3;                            // 直角に折れる手
+        if (p.data[0] === f.lastFile) w *= 0.2;
+        w *= pipeTempoWeight(p, f.sizeIdx);
+        w *= pipeFlowAffinity(f, rect, size);
+        cands.push({ p, rect, w });
+        total += w;
+    }
+    if (!cands.length) return null;
+    let t = Math.random() * total;
+    for (const c of cands) { t -= c.w; if (t <= 0) return c; }
+    return cands[cands.length - 1];
+}
+
+// フローを開始位置へ戻す(初回・行き止まり時)
+function pipeResetFlow(f) {
+    f.sizeIdx = PIPE_SIZE_DEFAULT;
+    f.size = PIPE_SIZES[f.sizeIdx];
+    f.rect = {
+        left: Math.min(f.startLeft, PIPE_STAGE_W - f.size.w),
+        top:  Math.min(f.startTop,  PIPE_STAGE_H - f.size.h),
+    };
+    f.out = null;
+}
+
+function enterTestLevel2() {
+    buildPipePools();
+    PIPE.active = true;
+    PIPE.count = 0;
+    // 3本の蛇行。開始位置は画面内に散らし、以降は全体を自由に這う(重なりは許容)。
+    PIPE.flows = Array.from({ length: PIPE_FLOWS }, (_, i) => {
+        const f = {
+            id: i, card: null, lastFile: null,
+            startLeft: Math.round(PIPE_STAGE_W * (0.15 + 0.3 * i)),
+            startTop:  Math.round(PIPE_STAGE_H * (0.15 + 0.3 * i)),
+        };
+        pipeResetFlow(f);                                        // sizeIdx/size/rect/out を初期化
+        return f;
+    });
+
+    const stage = document.getElementById("pipe-stage");
+    const conveyor = document.getElementById("pipe-conveyor");
+    if (conveyor) conveyor.innerHTML = "";   // カードは絶対座標で配置(コンベアは静止コンテナ)
+    if (stage) stage.classList.add("active");
+    if (normalScreensContainer) normalScreensContainer.style.display = "none";
+    if (collageWrapper) collageWrapper.style.display = "none";
+
+    const n = PIPE.pool.length;
+    if (window.addDecisionLog) window.addDecisionLog(`test-level2 起動: パイプ素材 ${n}本。3本のパイプが同時に伸びる(3枚同時再生)`, "success");
+    console.log(`[pipe] entered test-level2. pool=${n}, flows=${PIPE.flows.length}`);
+
+    // 各フローの1枚目を同時に出す(以降は各フロー独立で、動画終了→次)
+    PIPE.flows.forEach(f => advanceFlow(f));
+}
+
+function exitTestLevel2() {
+    PIPE.active = false;
+    const stage = document.getElementById("pipe-stage");
+    const conveyor = document.getElementById("pipe-conveyor");
+    if (stage) stage.classList.remove("active");
+    if (conveyor) conveyor.innerHTML = "";
+    PIPE.flows = [];
+    if (normalScreensContainer) normalScreensContainer.style.display = "";
+    if (collageWrapper) collageWrapper.style.display = "";
+}
+
+// 動画は回転させない。連結は入り口/出口の辺の規則だけで成立するため、
+// 回転角の計算(pipeRotationDeg)と237マスのグリッド計算は pipePlaceNext に置き換えて廃止した。
+
+// 1本のフローを1手進める(現在カードをクロスフェードで次カードへ)
+function advanceFlow(f) {
+    if (!PIPE.active) return;
+    const conveyor = document.getElementById("pipe-conveyor");
+    if (!conveyor) return;
+
+    // このカードの大きさを先に決める(再生が始まったら変えない)
+    let sizeIdx = pipeNextSizeIdx(f);
+    let size = PIPE_SIZES[sizeIdx];
+
+    // 直前の出口の反対側から入る動画を選ぶ(b→d / d→b / a→c / c→a)。
+    // 初回・行き止まりのときは開始位置へ戻して仕切り直す。
+    let cand = null, rect = null, pick = null;
+    if (f.out) {
+        cand = pickNextPipe(f, PIPE_OPPOSITE[pipeEdgeBase(f.out)], size);
+        if (cand) { pick = cand.p; rect = cand.rect; }
+    }
+    if (!pick) {
+        pipeResetFlow(f);                       // 1枚目は入り口の制約が無いので何でもよい
+        // 開始位置は既定サイズで画面内に収めてあるので、大きさもそれに合わせる
+        sizeIdx = f.sizeIdx;
+        size = f.size;
+        const fresh = PIPE.pool.filter(p => p.data[0] !== f.lastFile);
+        const src = fresh.length ? fresh : PIPE.pool;
+        if (!src.length) return;
+        pick = src[Math.floor(Math.random() * src.length)];
+        rect = { ...f.rect };
+    }
+
+    const videoData = pick.data;
+    const fileName = videoData[0];
+
+    // 配置: 回転させず、前の動画の出口の辺の隣に置く(辺どうしが接する)
+    const el = document.createElement("video");
+    el.className = "pipe-card";
+    el.playsInline = true;
+    el.muted = true;
+    el.style.left = `${rect.left}px`;
+    el.style.top = `${rect.top}px`;
+    el.style.width = `${size.w}px`;
+    el.style.height = `${size.h}px`;
+    el.src = pipeVideoSrc(fileName);
+    conveyor.appendChild(el);
+
+    // クロスフェード: このフローの旧カードをフェイドアウトして除去
+    const old = f.card;
+    if (old && old.el) {
+        old.el.classList.remove("show");
+        const g = old.el;
+        setTimeout(() => { if (g && g.parentNode) g.parentNode.removeChild(g); }, 600);
+    }
+    f.card = { el };
+    f.lastFile = fileName;
+    f.rect = rect;
+    f.size = size;
+    f.sizeIdx = sizeIdx;
+    f.out = pick.out;                       // 次の動画はこの辺の反対側から入る
+
+    const startPlay = () => {
+        el.removeEventListener("canplay", startPlay);
+        f.errCount = 0;                                          // 再生成功 → 連続エラーをリセット
+        requestAnimationFrame(() => el.classList.add("show"));   // フェードイン
+        el.play().catch(err => console.warn(`[pipe] play失敗 ${fileName}`, err));
+    };
+    el.addEventListener("canplay", startPlay);
+    // 動画終了 → このフローを次カードへ(自分がまだこのフローの現在カードのときだけ)
+    el.onended = () => {
+        try { el.pause(); } catch (e) {}
+        if (PIPE.active && f.card && f.card.el === el) advanceFlow(f);
+    };
+    // 読み込み失敗(404等): 即再帰すると高速無限ループ(count連打・重い)になるため、
+    // 遅延してからリトライし、連続エラーが続いたらそのフローを停止する。
+    el.onerror = () => {
+        if (!PIPE.active || !f.card || f.card.el !== el) return;
+        f.errCount = (f.errCount || 0) + 1;
+        if (f.errCount > 12) {
+            console.warn(`[pipe] flow${f.id}: 連続読み込み失敗が多いため停止 (${fileName})`);
+            if (window.addDecisionLog) window.addDecisionLog(`Flow${f.id + 1}: 動画の読み込み失敗が続くため停止`, "error");
+            return;
+        }
+        setTimeout(() => { if (PIPE.active && f.card && f.card.el === el) advanceFlow(f); }, 600);
+    };
+    el.load();
+
+    PIPE.count++;
+    if (window.addDecisionLog) window.addDecisionLog(`Flow${f.id + 1} #${PIPE.count}: ${fileName} (${pick.in}→${pick.out}, ${videoData[1]}s)`, "trigger");
+    console.log(`[pipe] flow${f.id} ${fileName} in=${pick.in} out=${pick.out} ${size.w}x${size.h} at (${Math.round(rect.left)},${Math.round(rect.top)})`);
+}
+
+/* =====================================================================
+ *  Combination — Play B と test-level2 を交互に回す
+ *    ・Play B(速く激しい調子) を約2分
+ *    ・→ test-level2(やや遅い調子) を音声1曲分
+ *    ・これを繰り返す
+ *    ・数巡に一度スペシャル: 動画90/91/92 と音声T525/526/527 を対で、
+ *      画面中央 1240x620 に、他の映像・音声を出さず丸ごと1本再生する。
+ *      (90〜92 はローカルの videos/ に無く R2 にのみ在るため R2 から直接再生)
+ * ===================================================================== */
+// Play B の持ち時間(既定2分)。?combi=5 のように秒で上書きでき、動作確認を短時間で回せる。
+const COMBI_PLAYB_MS = (() => {
+    const q = parseFloat(new URLSearchParams(location.search).get("combi"));
+    return (isFinite(q) && q > 0) ? q * 1000 : 120000;
+})();
+const COMBI_SPECIAL_EVERY  = 4;               // 何巡に一度スペシャルを挟むか
+const COMBI_R2 = "https://pub-b863fe2ba58a4525be0263e22ceb85a5.r2.dev/";
+const COMBI = { active: false, phase: null, cycle: 0, timer: null, cleanup: null };
+
+function combiClearTimer() {
+    if (COMBI.timer) { clearTimeout(COMBI.timer); COMBI.timer = null; }
+}
+
+// いま鳴っている/映っているものを全部止める(フェーズ切替の共通処理)
+function combiStopAll() {
+    combiClearTimer();
+    if (COMBI.cleanup) { COMBI.cleanup(); COMBI.cleanup = null; }
+    if (typeof isCutUpPlaying !== "undefined" && isCutUpPlaying) stopCutUpPlayback();
+    if (PIPE.active) exitTestLevel2();
+    if (audioElement) { try { audioElement.pause(); } catch (e) {} }
+}
+
+// 音声を1曲かけて、終わったら next() へ。曲が無い場合も止まらないよう保険を張る。
+function combiPlayOneTrack(next) {
+    if (!audioElement || !audioMetadataPool || !audioMetadataPool.length) {
+        COMBI.timer = setTimeout(next, 60000);
+        return () => {};
+    }
+    const t = audioMetadataPool[Math.floor(Math.random() * audioMetadataPool.length)];
+    loadTrack(t.file_id);
+    const done = () => { audioElement.removeEventListener("ended", done); next(); };
+    audioElement.addEventListener("ended", done);
+    audioElement.play().catch(err => {
+        console.warn("[combi] 音声再生に失敗。時間で進めます。", err);
+        COMBI.timer = setTimeout(next, 60000);
+    });
+    return () => audioElement.removeEventListener("ended", done);
+}
+
+function combiEnterPlayB() {
+    combiStopAll();
+    COMBI.phase = "playB";
+    startCutUpPlayback();
+    if (window.addDecisionLog) window.addDecisionLog(`Combination: Play B (${COMBI_PLAYB_MS / 1000}秒)`, "success");
+    COMBI.timer = setTimeout(() => { if (COMBI.active) combiEnterPipe(); }, COMBI_PLAYB_MS);
+}
+
+function combiEnterPipe() {
+    combiStopAll();
+    COMBI.phase = "pipe";
+    enterTestLevel2();
+    if (window.addDecisionLog) window.addDecisionLog("Combination: test-level2 (音声1曲分)", "success");
+    COMBI.cleanup = combiPlayOneTrack(() => {
+        if (!COMBI.active) return;
+        COMBI.cycle++;
+        if (COMBI.cycle % COMBI_SPECIAL_EVERY === 0) combiEnterSpecial();
+        else combiEnterPlayB();
+    });
+}
+
+/* ── special シーン ───────────────────────────────────────────────────
+ * 動画90/91/92 と音声T525/T526/T527 を一音一映像の対で、画面中央
+ * 1240x620 に丸ごと1本再生する。他の映像・音声は出さない。
+ * 90〜92 はローカルの videos/ に無く R2 にのみ在るため R2 から直接再生。
+ * 音声のIDは "T525.aif"(loadTrackが内部で.mp3へ変換)。".mp3"を渡すと
+ * file_id と一致せず無音になるので注意。
+ * ------------------------------------------------------------------ */
+const SPECIAL_PAIRS = [
+    { video: 90, audio: "T525.aif" },
+    { video: 91, audio: "T526.aif" },
+    { video: 92, audio: "T527.aif" },
+];
+const SPECIAL = { active: false, box: null, lastIdx: -1, onEnd: null };
+
+function specialTeardown() {
+    if (SPECIAL.box && SPECIAL.box.parentNode) SPECIAL.box.parentNode.removeChild(SPECIAL.box);
+    SPECIAL.box = null;
+    if (audioElement) { try { audioElement.pause(); } catch (e) {} }
+}
+
+// 対を1つ再生する。動画と音声の両方が終わったら next() を呼ぶ(=まるまる再生)。
+function specialPlayOnce(next) {
+    let i = Math.floor(Math.random() * SPECIAL_PAIRS.length);
+    if (SPECIAL_PAIRS.length > 1 && i === SPECIAL.lastIdx) i = (i + 1) % SPECIAL_PAIRS.length;
+    SPECIAL.lastIdx = i;
+    const pair = SPECIAL_PAIRS[i];
+    const sfx = window.VIDEO_QUALITY_SUFFIX || "Sss720p";
+
+    const box = document.createElement("div");
+    box.id = "special-stage";
+    box.style.cssText =
+        "position:fixed; inset:0; z-index:9999; background:#000; display:flex;" +
+        "align-items:center; justify-content:center;";
+    const vid = document.createElement("video");
+    vid.playsInline = true;
+    vid.muted = true;                       // 音は audioElement 側だけを鳴らす
+    vid.style.cssText = "width:1240px; height:620px; object-fit:contain; background:#000;";
+    vid.src = COMBI_R2 + `${pair.video}-${sfx}.mp4`;
+    box.appendChild(vid);
+    document.body.appendChild(box);
+    SPECIAL.box = box;
+
+    // 映像と音声の両方が終わってから次へ(片方が欠けても止まらないようにする)
+    let pending = 2, done = false;
+    const settle = () => {
+        if (done) return;
+        if (--pending > 0) return;
+        done = true;
+        if (box.parentNode) box.parentNode.removeChild(box);
+        if (SPECIAL.box === box) SPECIAL.box = null;
+        next();
+    };
+
+    // src を入れた直後の play() は読み込み準備が整う前で中断されるため、
+    // パイプカードと同じく canplay を待ってから鳴らす。
+    vid.addEventListener("ended", settle, { once: true });
+    vid.addEventListener("error", () => {
+        console.warn(`[special] 動画 ${pair.video} を読めません`, vid.error && vid.error.message);
+        settle();
+    }, { once: true });
+    vid.addEventListener("canplay", () => {
+        vid.play().catch(err => console.warn("[special] 動画のplay失敗", err));
+    }, { once: true });
+    vid.load();
+
+    if (audioElement) {
+        loadTrack(pair.audio);
+        audioElement.addEventListener("ended", settle, { once: true });
+        audioElement.addEventListener("canplay", () => {
+            audioElement.play().catch(err => {
+                console.warn("[special] 音声のplay失敗", err);
+                settle();
+            });
+        }, { once: true });
+    } else {
+        settle();
+    }
+
+    console.log(`[special] ${pair.video}-${sfx}.mp4 + ${pair.audio}`);
+    if (window.addDecisionLog) window.addDecisionLog(`special: 動画${pair.video} + 音声${pair.audio} (中央1240x620)`, "trigger");
+}
+
+// ファイルをランダムに変えながらループ
+function startSpecialScene() {
+    if (SPECIAL.active) return;
+    SPECIAL.active = true;
+    if (typeof isCutUpPlaying !== "undefined" && isCutUpPlaying) stopCutUpPlayback();
+    if (PIPE.active) exitTestLevel2();
+    if (isPlaying) stopSequence();
+    if (normalScreensContainer) normalScreensContainer.style.setProperty("display", "none", "important");
+    if (collageWrapper) collageWrapper.style.setProperty("display", "none", "important");
+    const loop = () => { if (SPECIAL.active) specialPlayOnce(loop); };
+    loop();
+}
+
+function stopSpecialScene() {
+    SPECIAL.active = false;
+    specialTeardown();
+}
+window.startSpecialScene = startSpecialScene;
+window.stopSpecialScene = stopSpecialScene;
+
+// Combination のスペシャル区間は special シーンを1回だけ流して通常へ戻る
+function combiEnterSpecial() {
+    combiStopAll();
+    COMBI.phase = "special";
+    COMBI.cleanup = specialTeardown;
+    specialPlayOnce(() => { if (COMBI.active) combiEnterPlayB(); });
+}
+
+function startCombination() {
+    if (!PIPE.edges || !Object.keys(PIPE.edges).length) {
+        console.warn("[combi] 入出辺データが未読込みです。");
+    }
+    COMBI.active = true;
+    COMBI.cycle = 0;
+    combiEnterPlayB();
+}
+
+function stopCombination() {
+    COMBI.active = false;
+    COMBI.phase = null;
+    combiStopAll();
+}
+window.startCombination = startCombination;
+window.stopCombination = stopCombination;
+
+// 連結は「動画終了で自動連結」(onended)に一本化したため、updateLoop側では何もしない。
+// (「レベル2」は連結の合図ではなく"音"の話。音のレベル2フィルタは別途対応する。)
+function updatePipeLevel2(currentTime) {
+    if (!PIPE.active) return;
+}

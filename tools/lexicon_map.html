@@ -1,0 +1,425 @@
+<title>skinslides — Perceptual Vector Map</title>
+<style>
+  :root {
+    --bg: #08080b;
+    --panel: #0b0b10;
+    --line: #20222c;
+    --ink: #d3d7e0;
+    --muted: #71768a;
+    --faint: #4a4f60;
+    --video: #ff5b6a;   /* Visuals */
+    --sound: #f2a63a;   /* Sound */
+    --word:  #37c9c1;   /* Onomatopoeia */
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Helvetica Neue", Helvetica, Arial, "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  #app { display: flex; height: 100%; }
+
+  /* ---- Left: map ---- */
+  #stage {
+    position: relative; flex: 1 1 auto; min-width: 0; overflow: hidden;
+    background:
+      radial-gradient(900px 640px at 60% 20%, #12121a 0%, var(--bg) 62%),
+      var(--bg);
+  }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; display: block; }
+  canvas.grabbing { cursor: grabbing; }
+
+  .ov { position: absolute; pointer-events: none; z-index: 5; }
+
+  #titleblock { top: 24px; left: 28px; max-width: 70%; }
+  #titleblock .eyebrow { font-size: 11px; letter-spacing: 0.34em; color: var(--muted); text-transform: uppercase; font-weight: 600; }
+  #titleblock h1 { margin: 8px 0 5px; font-size: clamp(19px, 2.5vw, 27px); font-weight: 700; letter-spacing: 0.01em; text-wrap: balance; }
+  #titleblock .sub { font-size: 12px; letter-spacing: 0.12em; color: var(--faint); text-transform: uppercase; }
+
+
+  #legend { bottom: 22px; left: 28px; font-size: 12px; color: var(--muted); }
+  #legend .row { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+  #legend .k { display: inline-flex; align-items: center; gap: 8px; }
+  #legend .mk { width: 10px; height: 10px; box-shadow: 0 0 8px currentColor; }
+  #legend .mk.sq { border-radius: 0; }
+  #legend .mk.ci { border-radius: 50%; }
+  #legend .n { color: var(--faint); font-variant-numeric: tabular-nums; }
+  #legend .edges { margin-top: 9px; display: flex; gap: 18px; color: var(--faint); font-size: 11px; }
+  #legend .edges span { display: inline-flex; align-items: center; gap: 7px; }
+  #legend .edges i { width: 20px; border-top: 1px solid; display: inline-block; }
+  #hint { bottom: 22px; right: 24px; font-size: 11px; color: var(--faint); letter-spacing: 0.04em; text-align: right; max-width: 40%; }
+
+  /* ---- Right: detail window (screen split in two) ---- */
+  #detail {
+    flex: 0 0 auto; width: min(440px, 34vw); height: 100%;
+    background: var(--panel); border-left: 1px solid var(--line);
+    overflow-y: auto; padding: 26px 24px 30px;
+  }
+  #detail .placeholder { color: var(--faint); font-size: 13px; line-height: 1.5; margin-top: 12vh; }
+  #detail .kind { font-size: 10px; letter-spacing: 0.24em; text-transform: uppercase; font-weight: 700; }
+  #detail h2 { margin: 9px 0 3px; font-size: 26px; font-weight: 700; word-break: break-word; line-height: 0.9; }
+  #detail .metaline { font-size: 12px; color: var(--muted); margin-bottom: 6px; line-height: 1.15; }
+  #detail .grp { border-top: 1px solid var(--line); padding-top: 13px; margin-top: 15px; }
+  #detail .grp h3 { margin: 0 0 9px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); font-weight: 600; }
+  #detail ul { list-style: none; margin: 0; padding: 0; }
+  /* tightened line spacing (0.7) */
+  #detail li {
+    display: flex; justify-content: space-between; gap: 10px; font-size: 14px; line-height: 0.7;
+    cursor: pointer; padding: 6px 6px; margin: 0 -6px; border-radius: 3px;
+  }
+  #detail li:hover { background: rgba(255,255,255,0.05); }
+  #detail li .v { color: var(--faint); font-variant-numeric: tabular-nums; font-size: 12px; }
+
+  @media (max-width: 760px) {
+    #app { flex-direction: column; }
+    #stage { flex: 1 1 60%; }
+    #detail { width: 100%; height: 40%; border-left: none; border-top: 1px solid var(--line); padding: 18px 18px 22px; }
+    #detail .placeholder { margin-top: 0; }
+    #titleblock { max-width: 92%; }
+    #hint { display: none; }
+  }
+</style>
+
+<div id="app">
+  <div id="stage">
+    <canvas id="c"></canvas>
+
+    <div id="titleblock" class="ov">
+      <div class="eyebrow">skinslides</div>
+      <h1>A 10-Axis Perceptual Space</h1>
+      <div class="sub">Unified mapping of Onomatopoeia, Visuals &amp; Sound</div>
+    </div>
+
+    <div id="legend" class="ov">
+      <div class="row">
+        <span class="k"><span class="mk sq" style="color:var(--video)"></span>Visuals <span class="n">52</span></span>
+        <span class="k"><span class="mk sq" style="color:var(--sound)"></span>Sound <span class="n">47</span></span>
+        <span class="k"><span class="mk ci" style="color:var(--word)"></span>Onomatopoeia <span class="n">82</span></span>
+      </div>
+      <div class="edges">
+        <span><i style="color:var(--sound)"></i>Sound &rarr; its onomatopoeia</span>
+        <span><i style="color:var(--video)"></i>Onomatopoeia &rarr; nearest visual</span>
+      </div>
+    </div>
+
+    <div id="hint" class="ov">Hover a node to trace its Visual — Onomatopoeia — Sound chain · Click to pin · Drag · Scroll to zoom</div>
+  </div>
+
+  <aside id="detail">
+    <div id="detailInner">
+      <div class="placeholder">Hover a node to trace its links.<br>Click any node to pin its relations here.</div>
+    </div>
+  </aside>
+</div>
+
+<script>
+const DATA = {"meta":{"videos":52,"tracks":47,"words":82,"generated":"2026-07-18"},"nodes":[{"id":"v1","type":"video","label":"1.mp4","weight":1,"x":0.5649228244576935,"y":0.4265183381715461},{"id":"v2","type":"video","label":"2.mp4","weight":1,"x":0.13729119106572968,"y":0.12244666458995578},{"id":"v3","type":"video","label":"3.mp4","weight":1,"x":0.2924415902161126,"y":0.4790060587913879},{"id":"v4","type":"video","label":"4.mp4","weight":1,"x":0.20946238307432358,"y":0.6451697992915347},{"id":"v5","type":"video","label":"5.mp4","weight":1,"x":0.6143359762466557,"y":0},{"id":"v6","type":"video","label":"6.mp4","weight":1,"x":0.6276355001384777,"y":0.26224744590579874},{"id":"v7","type":"video","label":"7.mp4","weight":1,"x":0.5866362441066602,"y":0.0797595320148149},{"id":"v8","type":"video","label":"8.mp4","weight":1,"x":0.644275585288642,"y":0.3613451175290794},{"id":"v9","type":"video","label":"9.mp4","weight":1,"x":0.543860515237792,"y":0.24483301409555064},{"id":"v10","type":"video","label":"10.mp4","weight":1,"x":0.619837261725951,"y":0.286033160249332},{"id":"v11","type":"video","label":"11.mp4","weight":1,"x":0.05137134465316008,"y":0.5346088198049357},{"id":"v12","type":"video","label":"12.mp4","weight":1,"x":0.1188635999599458,"y":0.6024007232516432},{"id":"v13","type":"video","label":"13.mp4","weight":1,"x":0.4393943746057455,"y":0.28348462538116287},{"id":"v14","type":"video","label":"14.mp4","weight":1,"x":0.1453812120761858,"y":0.6935536015033429},{"id":"v15","type":"video","label":"15.mp4","weight":1,"x":0.1683729980331932,"y":0.24816133569063376},{"id":"v16","type":"video","label":"16.mp4","weight":1,"x":0.39448491776487504,"y":0.14849957942873537},{"id":"v17","type":"video","label":"17.mp4","weight":1,"x":0.014741612903359895,"y":0.6007344587602432},{"id":"v18","type":"video","label":"18.mp4","weight":1,"x":0.43222925732138207,"y":0.33815520892039114},{"id":"v19","type":"video","label":"19.mp4","weight":1,"x":0.4362170277336466,"y":0.5452422758442288},{"id":"v20","type":"video","label":"20.mp4","weight":1,"x":0.5261909659131805,"y":0.44572479782327556},{"id":"v21","type":"video","label":"21.mp4","weight":1,"x":0.6517010115603962,"y":0.5099369244869456},{"id":"v22","type":"video","label":"22.mp4","weight":1,"x":0.5117122776303663,"y":0.5596640465374056},{"id":"v23","type":"video","label":"23.mp4","weight":1,"x":0.3566814251874599,"y":0.5173785400190587},{"id":"v24","type":"video","label":"24.mp4","weight":1,"x":0.05429860940577027,"y":0.7305083369163118},{"id":"v25","type":"video","label":"25.mp4","weight":1,"x":0.3216917395457168,"y":0.5941051929048325},{"id":"v26","type":"video","label":"26.mp4","weight":1,"x":0.8933819708564298,"y":0.39967426173716036},{"id":"v27","type":"video","label":"27.mp4","weight":1,"x":0.6977471931318477,"y":0.6708742157662976},{"id":"v28","type":"video","label":"28.mp4","weight":1,"x":0.7801593914047958,"y":0.352824784949739},{"id":"v29","type":"video","label":"29.mp4","weight":1,"x":0.8816513274294139,"y":0.3188679639109396},{"id":"v30","type":"video","label":"30.mp4","weight":1,"x":0.6747580751286472,"y":0.2105736669639514},{"id":"v31","type":"video","label":"31.mp4","weight":1,"x":0.8984250577978947,"y":0.3362165037411308},{"id":"v32","type":"video","label":"32.mp4","weight":1,"x":0.4110998282152437,"y":0.32625723018136354},{"id":"v33","type":"video","label":"33.mp4","weight":1,"x":0.23945199208470114,"y":0.3172955886224669},{"id":"v34","type":"video","label":"34.mp4","weight":1,"x":0.5785282817013383,"y":0.3488099958163501},{"id":"v35","type":"video","label":"35.mp4","weight":1,"x":0.6961809918531081,"y":0.32677124240481814},{"id":"v36","type":"video","label":"36.mp4","weight":1,"x":0.6845622663217377,"y":0.42115405595130345},{"id":"v38","type":"video","label":"38.mp4","weight":1,"x":0.7581417377515268,"y":0.37454251868360855},{"id":"v39","type":"video","label":"39.mp4","weight":1,"x":0.645810175660416,"y":0.3636897721883116},{"id":"v40","type":"video","label":"40.mp4","weight":1,"x":0.6532403103977166,"y":0.10709450566458015},{"id":"v41","type":"video","label":"41.mp4","weight":1,"x":0.5729895144705807,"y":0.36880820148647936},{"id":"v44","type":"video","label":"44.mp4","weight":1,"x":0.7186676978192931,"y":0.5688089085884314},{"id":"v45","type":"video","label":"45.mp4","weight":1,"x":0.8556707868671449,"y":0.5966496500310678},{"id":"v46","type":"video","label":"46.mp4","weight":1,"x":0.9177569487377552,"y":0.5085736870343293},{"id":"v47","type":"video","label":"47.mp4","weight":1,"x":0.9878630073336516,"y":0.5004231644359415},{"id":"v48","type":"video","label":"48.mp4","weight":1,"x":0.898607446530832,"y":0.73022265068069},{"id":"v49","type":"video","label":"49.mp4","weight":1,"x":1,"y":0.41504872176297747},{"id":"v50","type":"video","label":"50.mp4","weight":1,"x":0.6127536889989977,"y":0.4088870449998652},{"id":"v51","type":"video","label":"51.mp4","weight":1,"x":0.45238477783501485,"y":0.43287702169879444},{"id":"v52","type":"video","label":"52.mp4","weight":1,"x":0.47547733792081326,"y":0.33143721669774334},{"id":"v53","type":"video","label":"53.mp4","weight":1,"x":0.2772917786450459,"y":0.31448461998132854},{"id":"v54","type":"video","label":"54.mp4","weight":1,"x":0.6617747127241046,"y":0.39145914923997377},{"id":"v56","type":"video","label":"56.mp4","weight":1,"x":0.10305213775773873,"y":0.44343369717423564},{"id":"tscene2End00.aif","type":"track","label":"scene2End00","weight":60,"x":0.6930957478046517,"y":0.7298946828896355},{"id":"tscene2End01.aif","type":"track","label":"scene2End01","weight":60,"x":0.5966823431897519,"y":0.7129668371546249},{"id":"tscene2End02.aif","type":"track","label":"scene2End02","weight":60,"x":0.687050843438702,"y":0.6727281987351588},{"id":"tT507.aif","type":"track","label":"T507","weight":60,"x":0.6979631741789125,"y":0.6891994479053348},{"id":"tT508.aif","type":"track","label":"T508","weight":60,"x":0.6534980153448068,"y":0.6122103905964363},{"id":"tT509.aif","type":"track","label":"T509","weight":60,"x":0.6495972155925125,"y":0.6041411488596927},{"id":"tT510.aif","type":"track","label":"T510","weight":60,"x":0.6155767141965098,"y":0.6770963544606519},{"id":"tT511.aif","type":"track","label":"T511","weight":60,"x":0.6443606648580347,"y":0.707410871269486},{"id":"tT512.aif","type":"track","label":"T512","weight":60,"x":0.5541379811394631,"y":0.504588825267706},{"id":"tT513.aif","type":"track","label":"T513","weight":60,"x":0.4160306756197447,"y":0.505068850416673},{"id":"tT514.aif","type":"track","label":"T514","weight":60,"x":0.10509747562464075,"y":0.5142039105753686},{"id":"tT515.aif","type":"track","label":"T515","weight":60,"x":0.6355680579877372,"y":0.6062975957208824},{"id":"tT516.aif","type":"track","label":"T516","weight":60,"x":0.6342889268252283,"y":0.6955334309662945},{"id":"tT517.aif","type":"track","label":"T517","weight":60,"x":0.520427747193718,"y":0.6778897686656148},{"id":"tT518.aif","type":"track","label":"T518","weight":60,"x":0.2820799679118183,"y":0.5581753179916628},{"id":"tT519.aif","type":"track","label":"T519","weight":60,"x":0.6644058653594781,"y":0.6999129309864941},{"id":"tT520.aif","type":"track","label":"T520","weight":60,"x":0.5476796594522311,"y":0.7084862802459736},{"id":"tT521.aif","type":"track","label":"T521","weight":12,"x":0.6381391861061982,"y":0.6141493748263942},{"id":"tT522.aif","type":"track","label":"T522","weight":60,"x":0.44220134458192945,"y":0.6734952020189403},{"id":"tT523.aif","type":"track","label":"T523","weight":60,"x":0.6250488711854285,"y":0.7135791195248885},{"id":"tT524.aif","type":"track","label":"T524","weight":60,"x":0.47990108509512514,"y":0.6967717240350101},{"id":"tT525.aif","type":"track","label":"T525","weight":20,"x":0.14312981898050378,"y":0.5781740823148847},{"id":"tT525fix.aif","type":"track","label":"T525fix","weight":21,"x":0.18859538069104856,"y":0.5554600577361942},{"id":"tT526.aif","type":"track","label":"T526","weight":60,"x":0.5858094855876055,"y":0.6412383596703574},{"id":"tT526fix.aif","type":"track","label":"T526fix","weight":60,"x":0.655411112075201,"y":0.6294448575109491},{"id":"tT527.aif","type":"track","label":"T527","weight":16,"x":0.5496430221820076,"y":0.6134722263949464},{"id":"tT527fix.aif","type":"track","label":"T527fix","weight":60,"x":0.6387445537760773,"y":0.5329214844679518},{"id":"tT528.aif","type":"track","label":"T528","weight":60,"x":0.6395498101273303,"y":0.5714872134736445},{"id":"tT529.aif","type":"track","label":"T529","weight":60,"x":0.6565280676681753,"y":0.6196530249582506},{"id":"tT530.aif","type":"track","label":"T530","weight":60,"x":0.677205096719692,"y":0.6343118065806554},{"id":"tT531.aif","type":"track","label":"T531","weight":60,"x":0.5862962348113541,"y":0.5882809952307368},{"id":"tT532.aif","type":"track","label":"T532","weight":60,"x":0.5747324022443779,"y":0.663183069185149},{"id":"tT533.aif","type":"track","label":"T533","weight":60,"x":0.5557093604865643,"y":0.6510552962017038},{"id":"tT534.aif","type":"track","label":"T534","weight":60,"x":0.6837132876475136,"y":0.6349827779277905},{"id":"tT535.aif","type":"track","label":"T535","weight":60,"x":0.594352525456742,"y":0.503793433616367},{"id":"tT536.aif","type":"track","label":"T536","weight":60,"x":0.465642718020361,"y":0.698256485743742},{"id":"tT537.aif","type":"track","label":"T537","weight":60,"x":0.2282016420938278,"y":0.6028271124606343},{"id":"tT538.aif","type":"track","label":"T538","weight":60,"x":0.5725949334932914,"y":0.6048399663226605},{"id":"tT538_0.aif","type":"track","label":"T538_0","weight":55,"x":0.6757530473930862,"y":0.6920397428205589},{"id":"tT538_00.aif","type":"track","label":"T538_00","weight":60,"x":0.6712241996699356,"y":0.6919603294138733},{"id":"tT538_01.aif","type":"track","label":"T538_01","weight":52,"x":0.5129701130136074,"y":0.5992334336569002},{"id":"tT538_02.aif","type":"track","label":"T538_02","weight":30,"x":0.527686169319892,"y":0.5762295145468159},{"id":"tT538_1.aif","type":"track","label":"T538_1","weight":27,"x":0.5997756071750757,"y":0.7270714098520293},{"id":"tT538_2.aif","type":"track","label":"T538_2","weight":30,"x":0.5146926416308512,"y":0.4890190589243548},{"id":"tT539.aif","type":"track","label":"T539","weight":60,"x":0.6420723369860458,"y":0.6673045273567438},{"id":"tT540.aif","type":"track","label":"T540","weight":60,"x":0.13144395927578129,"y":0.6368629905689712},{"id":"tT541.aif","type":"track","label":"T541","weight":51,"x":0.5587353662983702,"y":0.5687645774633806},{"id":"wくんくん","type":"word","label":"くんくん","weight":148,"x":0.5524444620569798,"y":0.6626324220777374},{"id":"wねっとり","type":"word","label":"ねっとり","weight":21,"x":0.9003705623189233,"y":0.5779491761903714},{"id":"wがっぷり","type":"word","label":"がっぷり","weight":53,"x":0.7332306557870719,"y":0.8720507199497903},{"id":"wこんこん","type":"word","label":"こんこん","weight":47,"x":0.473488202099098,"y":0.7378754563584913},{"id":"wことん","type":"word","label":"ことん","weight":38,"x":0.4596324461898875,"y":0.8413501105232432},{"id":"wうわーん","type":"word","label":"うわーん","weight":84,"x":0.6342053989279554,"y":0.652564764335976},{"id":"wべったり","type":"word","label":"べったり","weight":8,"x":0.8847099603987012,"y":0.627213749548098},{"id":"wがみがみ","type":"word","label":"がみがみ","weight":169,"x":0.6460459457038894,"y":0.8301725325738483},{"id":"wがたん","type":"word","label":"がたん","weight":41,"x":0.6650494388592428,"y":0.9757914125046196},{"id":"wえちーん","type":"word","label":"えちーん","weight":96,"x":0.7477251880689085,"y":0.6016325867114749},{"id":"wでっぷり","type":"word","label":"でっぷり","weight":6,"x":0.8668025914776907,"y":0.5672723030737635},{"id":"wうんうん","type":"word","label":"うんうん","weight":159,"x":0.5974304059620951,"y":0.4350337465144727},{"id":"wりじゅーん","type":"word","label":"りじゅーん","weight":144,"x":0.7077673223809647,"y":0.6936479415476532},{"id":"wうん","type":"word","label":"うん","weight":48,"x":0.6366817686176569,"y":0.6017528912341872},{"id":"wじでーん","type":"word","label":"じでーん","weight":17,"x":0.8289147895793049,"y":0.6744079327251763},{"id":"wじえーん","type":"word","label":"じえーん","weight":12,"x":0.8365006056341387,"y":0.6626594344371474},{"id":"wいだーん","type":"word","label":"いだーん","weight":7,"x":0.7615604360386236,"y":0.5914752398991292},{"id":"wえざーん","type":"word","label":"えざーん","weight":36,"x":0.7835010172452658,"y":0.5171439210650577},{"id":"wりみゅーん","type":"word","label":"りみゅーん","weight":252,"x":0.5974223706923865,"y":0.685607289762787},{"id":"wいちーん","type":"word","label":"いちーん","weight":17,"x":0.6910873377765359,"y":0.6412927106535746},{"id":"wいちゃいちゃ","type":"word","label":"いちゃいちゃ","weight":54,"x":0.5530170055711874,"y":0.5356639365273521},{"id":"wぎぎゃーん","type":"word","label":"ぎぎゃーん","weight":50,"x":0.6119529804556815,"y":0.8474647259071038},{"id":"wおずおず","type":"word","label":"おずおず","weight":7,"x":0.6965360938639436,"y":0.32715930149255057},{"id":"wちまちま","type":"word","label":"ちまちま","weight":19,"x":0.6261423294016563,"y":0.4340051076496119},{"id":"wことこと","type":"word","label":"ことこと","weight":29,"x":0.4491260943886029,"y":0.612912876771331},{"id":"wあーん","type":"word","label":"あーん","weight":20,"x":0.5125390753993143,"y":0.4161003072109076},{"id":"wいにー","type":"word","label":"いにー","weight":20,"x":0.5209657563007715,"y":0.42718281944734005},{"id":"wぴーちく","type":"word","label":"ぴーちく","weight":21,"x":0.2442614388793594,"y":0.5713525513492019},{"id":"wりゆーん","type":"word","label":"りゆーん","weight":85,"x":0.49542290498435293,"y":0.5137932135642284},{"id":"wちらちら","type":"word","label":"ちらちら","weight":12,"x":0.053527329555527935,"y":0.46375826800306763},{"id":"wぴかぴか","type":"word","label":"ぴかぴか","weight":12,"x":0.01682609829779695,"y":0.6523683277627074},{"id":"wきりゃー","type":"word","label":"きりゃー","weight":12,"x":0.2399244669526115,"y":0.672278002027816},{"id":"wすかすか","type":"word","label":"すかすか","weight":12,"x":0.07744377650479631,"y":0.41647957425718846},{"id":"wかすかす","type":"word","label":"かすかす","weight":18,"x":0.1377657068124707,"y":0.3661353808260643},{"id":"wりりゃーん","type":"word","label":"りりゃーん","weight":87,"x":0.32505425381880265,"y":0.7738002389501282},{"id":"wちみゅーん","type":"word","label":"ちみゅーん","weight":99,"x":0.6660434287573229,"y":0.5654424823651951},{"id":"wしわしわ","type":"word","label":"しわしわ","weight":9,"x":0.34013726604649064,"y":0.3099414825680379},{"id":"wびゅんびゅん","type":"word","label":"びゅんびゅん","weight":19,"x":0.3388104615965298,"y":0.938978195699145},{"id":"wうかうか","type":"word","label":"うかうか","weight":7,"x":0.10045492637671423,"y":0.3711163735012209},{"id":"wごろごろ","type":"word","label":"ごろごろ","weight":5,"x":0.3147074986620619,"y":0.4625488469561958},{"id":"wぐらぐら","type":"word","label":"ぐらぐら","weight":8,"x":0.3645451779527451,"y":0.5831044529517443},{"id":"wげらげら","type":"word","label":"げらげら","weight":7,"x":0.24338779896960352,"y":0.634189891627374},{"id":"wころころ","type":"word","label":"ころころ","weight":8,"x":0.18039333714814157,"y":0.5002755596425918},{"id":"wもくもく","type":"word","label":"もくもく","weight":6,"x":0.42440863293403946,"y":0.5108054923494514},{"id":"wゆらゆら","type":"word","label":"ゆらゆら","weight":4,"x":0.2374026598413698,"y":0.3673171410338964},{"id":"wがつがつ","type":"word","label":"がつがつ","weight":26,"x":0.48101216710197714,"y":0.9253696123175658},{"id":"wねちねち","type":"word","label":"ねちねち","weight":9,"x":0.8459051678119296,"y":0.527617234041731},{"id":"wおちおち","type":"word","label":"おちおち","weight":8,"x":0.5412988043007865,"y":0.5262112684722642},{"id":"wぐいぐい","type":"word","label":"ぐいぐい","weight":8,"x":0.48339573080147047,"y":0.907035933703984},{"id":"wえっちらおっちら","type":"word","label":"えっちらおっちら","weight":13,"x":0.5313503467888884,"y":0.5121287002658604},{"id":"wえっさえっさ","type":"word","label":"えっさえっさ","weight":7,"x":0.3060185624076754,"y":0.8743322529334089},{"id":"wがっかり","type":"word","label":"がっかり","weight":6,"x":0.4327632229878602,"y":0.6478577972894779},{"id":"wちゃらんぽらん","type":"word","label":"ちゃらんぽらん","weight":23,"x":0.17413554094160244,"y":0.46210671335451564},{"id":"wいらいら","type":"word","label":"いらいら","weight":6,"x":0.49683064955166434,"y":0.7121405776824391},{"id":"wこけこっこー","type":"word","label":"こけこっこー","weight":51,"x":0.27827262334841124,"y":0.7383266169246905},{"id":"wとぼとぼ","type":"word","label":"とぼとぼ","weight":4,"x":0.6569201111690514,"y":0.3537552896018867},{"id":"wわいわい","type":"word","label":"わいわい","weight":18,"x":0.16367351620351994,"y":0.6140369750246858},{"id":"wいそいそ","type":"word","label":"いそいそ","weight":8,"x":0.16538688303573215,"y":0.6651789124874439},{"id":"wひらひら","type":"word","label":"ひらひら","weight":3,"x":0.08754748309467242,"y":0.37952878803658907},{"id":"wばっさり","type":"word","label":"ばっさり","weight":6,"x":0.24124061454747933,"y":1},{"id":"wぱさぱさ","type":"word","label":"ぱさぱさ","weight":6,"x":0.048897789763066524,"y":0.4032085298870714},{"id":"wいゆーん","type":"word","label":"いゆーん","weight":69,"x":0.6130602164399016,"y":0.4295621414796292},{"id":"wがっくり","type":"word","label":"がっくり","weight":3,"x":0.43473614542839517,"y":0.7139031069470773},{"id":"wちんまり","type":"word","label":"ちんまり","weight":12,"x":0.6876115367880142,"y":0.40473864245161356},{"id":"wうっとり","type":"word","label":"うっとり","weight":12,"x":0.3947477311974882,"y":0.40757818211670205},{"id":"wうとうと","type":"word","label":"うとうと","weight":2,"x":0.48423642162406316,"y":0.24627551163997632},{"id":"wにじゅー","type":"word","label":"にじゅー","weight":27,"x":0.7072916297918498,"y":0.42446209142834895},{"id":"wおめおめ","type":"word","label":"おめおめ","weight":6,"x":0.7025243096148635,"y":0.31689013779652625},{"id":"wちでーん","type":"word","label":"ちでーん","weight":33,"x":0.7753607909342303,"y":0.5323843022728483},{"id":"wりみー","type":"word","label":"りみー","weight":20,"x":0.41997790617517705,"y":0.6530005183557792},{"id":"wへらへら","type":"word","label":"へらへら","weight":15,"x":0.1329302963328701,"y":0.4483948164461265},{"id":"wえぞー","type":"word","label":"えぞー","weight":14,"x":0.6961604361225027,"y":0.4212615138486635},{"id":"wぎゃーぎゃー","type":"word","label":"ぎゃーぎゃー","weight":16,"x":0.41242992161877184,"y":0.700918388672949},{"id":"wおぜー","type":"word","label":"おぜー","weight":11,"x":0.6658112302119213,"y":0.4588163615644388},{"id":"wよぞー","type":"word","label":"よぞー","weight":7,"x":0.6099775162284495,"y":0.33019317951092775},{"id":"wじみゅー","type":"word","label":"じみゅー","weight":5,"x":0.728867884795098,"y":0.5539218921993351},{"id":"wぐーすか","type":"word","label":"ぐーすか","weight":6,"x":0.384959318573274,"y":0.3118826482046136},{"id":"wがさがさ","type":"word","label":"がさがさ","weight":10,"x":0.20193963742098991,"y":0.6377342212502413},{"id":"wぱらぱら","type":"word","label":"ぱらぱら","weight":7,"x":0.00130958858277172,"y":0.5021627853002594},{"id":"wきらきら","type":"word","label":"きらきら","weight":8,"x":0,"y":0.5580667200042981},{"id":"wかさかさ","type":"word","label":"かさかさ","weight":8,"x":0.026738498767021248,"y":0.5685253516998455},{"id":"wめらめら","type":"word","label":"めらめら","weight":8,"x":0.11976709446468028,"y":0.5894234549202165}],"edges":[{"s":"tscene2End00.aif","t":"wべったり","kind":"contains","wgt":8},{"s":"tscene2End00.aif","t":"wがたん","kind":"contains","wgt":7},{"s":"tscene2End00.aif","t":"wくんくん","kind":"contains","wgt":6},{"s":"tscene2End01.aif","t":"wうんうん","kind":"contains","wgt":11},{"s":"tscene2End01.aif","t":"wりじゅーん","kind":"contains","wgt":11},{"s":"tscene2End01.aif","t":"wがたん","kind":"contains","wgt":11},{"s":"tscene2End02.aif","t":"wじでーん","kind":"contains","wgt":8},{"s":"tscene2End02.aif","t":"wがみがみ","kind":"contains","wgt":8},{"s":"tscene2End02.aif","t":"wくんくん","kind":"contains","wgt":8},{"s":"tT507.aif","t":"wいちーん","kind":"contains","wgt":17},{"s":"tT507.aif","t":"wりじゅーん","kind":"contains","wgt":15},{"s":"tT507.aif","t":"wえちーん","kind":"contains","wgt":14},{"s":"tT508.aif","t":"wえちーん","kind":"contains","wgt":14},{"s":"tT508.aif","t":"wうんうん","kind":"contains","wgt":13},{"s":"tT508.aif","t":"wりじゅーん","kind":"contains","wgt":11},{"s":"tT509.aif","t":"wぎぎゃーん","kind":"contains","wgt":8},{"s":"tT509.aif","t":"wうわーん","kind":"contains","wgt":8},{"s":"tT509.aif","t":"wこんこん","kind":"contains","wgt":7},{"s":"tT510.aif","t":"wことこと","kind":"contains","wgt":11},{"s":"tT510.aif","t":"wことん","kind":"contains","wgt":10},{"s":"tT510.aif","t":"wねっとり","kind":"contains","wgt":10},{"s":"tT511.aif","t":"wがみがみ","kind":"contains","wgt":11},{"s":"tT511.aif","t":"wうんうん","kind":"contains","wgt":10},{"s":"tT511.aif","t":"wうん","kind":"contains","wgt":9},{"s":"tT512.aif","t":"wくんくん","kind":"contains","wgt":20},{"s":"tT512.aif","t":"wあーん","kind":"contains","wgt":20},{"s":"tT512.aif","t":"wうんうん","kind":"contains","wgt":20},{"s":"tT513.aif","t":"wぴーちく","kind":"contains","wgt":21},{"s":"tT513.aif","t":"wいにー","kind":"contains","wgt":20},{"s":"tT513.aif","t":"wりゆーん","kind":"contains","wgt":19},{"s":"tT514.aif","t":"wちらちら","kind":"contains","wgt":12},{"s":"tT514.aif","t":"wぴかぴか","kind":"contains","wgt":12},{"s":"tT514.aif","t":"wきりゃー","kind":"contains","wgt":12},{"s":"tT515.aif","t":"wうんうん","kind":"contains","wgt":12},{"s":"tT515.aif","t":"wりみゅーん","kind":"contains","wgt":10},{"s":"tT515.aif","t":"wくんくん","kind":"contains","wgt":10},{"s":"tT516.aif","t":"wがみがみ","kind":"contains","wgt":13},{"s":"tT516.aif","t":"wりじゅーん","kind":"contains","wgt":13},{"s":"tT516.aif","t":"wりみゅーん","kind":"contains","wgt":12},{"s":"tT517.aif","t":"wりりゃーん","kind":"contains","wgt":22},{"s":"tT517.aif","t":"wちみゅーん","kind":"contains","wgt":20},{"s":"tT517.aif","t":"wりみゅーん","kind":"contains","wgt":18},{"s":"tT518.aif","t":"wびゅんびゅん","kind":"contains","wgt":10},{"s":"tT518.aif","t":"wぐらぐら","kind":"contains","wgt":8},{"s":"tT518.aif","t":"wころころ","kind":"contains","wgt":8},{"s":"tT519.aif","t":"wりじゅーん","kind":"contains","wgt":11},{"s":"tT519.aif","t":"wりみゅーん","kind":"contains","wgt":11},{"s":"tT519.aif","t":"wえちーん","kind":"contains","wgt":11},{"s":"tT520.aif","t":"wくんくん","kind":"contains","wgt":10},{"s":"tT520.aif","t":"wがつがつ","kind":"contains","wgt":8},{"s":"tT520.aif","t":"wりみゅーん","kind":"contains","wgt":7},{"s":"tT521.aif","t":"wちまちま","kind":"contains","wgt":2},{"s":"tT521.aif","t":"wねちねち","kind":"contains","wgt":2},{"s":"tT521.aif","t":"wおちおち","kind":"contains","wgt":2},{"s":"tT522.aif","t":"wぐいぐい","kind":"contains","wgt":8},{"s":"tT522.aif","t":"wえっさえっさ","kind":"contains","wgt":7},{"s":"tT522.aif","t":"wちゃらんぽらん","kind":"contains","wgt":7},{"s":"tT523.aif","t":"wりみゅーん","kind":"contains","wgt":18},{"s":"tT523.aif","t":"wりじゅーん","kind":"contains","wgt":15},{"s":"tT523.aif","t":"wくんくん","kind":"contains","wgt":14},{"s":"tT524.aif","t":"wこけこっこー","kind":"contains","wgt":9},{"s":"tT524.aif","t":"wくんくん","kind":"contains","wgt":9},{"s":"tT524.aif","t":"wいちゃいちゃ","kind":"contains","wgt":9},{"s":"tT525.aif","t":"wわいわい","kind":"contains","wgt":4},{"s":"tT525.aif","t":"wいそいそ","kind":"contains","wgt":4},{"s":"tT525.aif","t":"wひらひら","kind":"contains","wgt":3},{"s":"tT525fix.aif","t":"wしわしわ","kind":"contains","wgt":4},{"s":"tT525fix.aif","t":"wわいわい","kind":"contains","wgt":4},{"s":"tT525fix.aif","t":"wいそいそ","kind":"contains","wgt":4},{"s":"tT526.aif","t":"wいゆーん","kind":"contains","wgt":11},{"s":"tT526.aif","t":"wくんくん","kind":"contains","wgt":10},{"s":"tT526.aif","t":"wがみがみ","kind":"contains","wgt":8},{"s":"tT526fix.aif","t":"wがっぷり","kind":"contains","wgt":11},{"s":"tT526fix.aif","t":"wうわーん","kind":"contains","wgt":10},{"s":"tT526fix.aif","t":"wうん","kind":"contains","wgt":10},{"s":"tT527.aif","t":"wがみがみ","kind":"contains","wgt":3},{"s":"tT527.aif","t":"wがっくり","kind":"contains","wgt":3},{"s":"tT527.aif","t":"wちんまり","kind":"contains","wgt":2},{"s":"tT527fix.aif","t":"wいゆーん","kind":"contains","wgt":11},{"s":"tT527fix.aif","t":"wりゆーん","kind":"contains","wgt":10},{"s":"tT527fix.aif","t":"wえざーん","kind":"contains","wgt":10},{"s":"tT528.aif","t":"wうわーん","kind":"contains","wgt":12},{"s":"tT528.aif","t":"wりゆーん","kind":"contains","wgt":11},{"s":"tT528.aif","t":"wうんうん","kind":"contains","wgt":10},{"s":"tT529.aif","t":"wりみゅーん","kind":"contains","wgt":9},{"s":"tT529.aif","t":"wがっぷり","kind":"contains","wgt":8},{"s":"tT529.aif","t":"wうんうん","kind":"contains","wgt":8},{"s":"tT530.aif","t":"wりみゅーん","kind":"contains","wgt":16},{"s":"tT530.aif","t":"wちみゅーん","kind":"contains","wgt":16},{"s":"tT530.aif","t":"wえちーん","kind":"contains","wgt":15},{"s":"tT531.aif","t":"wりゆーん","kind":"contains","wgt":20},{"s":"tT531.aif","t":"wちみゅーん","kind":"contains","wgt":20},{"s":"tT531.aif","t":"wりみゅーん","kind":"contains","wgt":20},{"s":"tT532.aif","t":"wくんくん","kind":"contains","wgt":13},{"s":"tT532.aif","t":"wりみゅーん","kind":"contains","wgt":13},{"s":"tT532.aif","t":"wがみがみ","kind":"contains","wgt":11},{"s":"tT533.aif","t":"wいちゃいちゃ","kind":"contains","wgt":15},{"s":"tT533.aif","t":"wりみゅーん","kind":"contains","wgt":13},{"s":"tT533.aif","t":"wことこと","kind":"contains","wgt":12},{"s":"tT534.aif","t":"wくんくん","kind":"contains","wgt":7},{"s":"tT534.aif","t":"wちでーん","kind":"contains","wgt":7},{"s":"tT534.aif","t":"wねっとり","kind":"contains","wgt":7},{"s":"tT535.aif","t":"wちみゅーん","kind":"contains","wgt":21},{"s":"tT535.aif","t":"wいゆーん","kind":"contains","wgt":20},{"s":"tT535.aif","t":"wりゆーん","kind":"contains","wgt":19},{"s":"tT536.aif","t":"wりみゅーん","kind":"contains","wgt":24},{"s":"tT536.aif","t":"wりみー","kind":"contains","wgt":20},{"s":"tT536.aif","t":"wりりゃーん","kind":"contains","wgt":16},{"s":"tT537.aif","t":"wりりゃーん","kind":"contains","wgt":18},{"s":"tT537.aif","t":"wちゃらんぽらん","kind":"contains","wgt":16},{"s":"tT537.aif","t":"wへらへら","kind":"contains","wgt":15},{"s":"tT538.aif","t":"wがみがみ","kind":"contains","wgt":9},{"s":"tT538.aif","t":"wえっちらおっちら","kind":"contains","wgt":9},{"s":"tT538.aif","t":"wにじゅー","kind":"contains","wgt":8},{"s":"tT538_0.aif","t":"wがみがみ","kind":"contains","wgt":8},{"s":"tT538_0.aif","t":"wえちーん","kind":"contains","wgt":8},{"s":"tT538_0.aif","t":"wちでーん","kind":"contains","wgt":8},{"s":"tT538_00.aif","t":"wりみゅーん","kind":"contains","wgt":11},{"s":"tT538_00.aif","t":"wがみがみ","kind":"contains","wgt":10},{"s":"tT538_00.aif","t":"wぎぎゃーん","kind":"contains","wgt":9},{"s":"tT538_01.aif","t":"wりりゃーん","kind":"contains","wgt":8},{"s":"tT538_01.aif","t":"wえぞー","kind":"contains","wgt":8},{"s":"tT538_01.aif","t":"wこけこっこー","kind":"contains","wgt":8},{"s":"tT538_02.aif","t":"wりりゃーん","kind":"contains","wgt":5},{"s":"tT538_02.aif","t":"wじみゅー","kind":"contains","wgt":5},{"s":"tT538_02.aif","t":"wこけこっこー","kind":"contains","wgt":5},{"s":"tT538_1.aif","t":"wりりゃーん","kind":"contains","wgt":4},{"s":"tT538_1.aif","t":"wじでーん","kind":"contains","wgt":4},{"s":"tT538_1.aif","t":"wじえーん","kind":"contains","wgt":4},{"s":"tT538_2.aif","t":"wぐーすか","kind":"contains","wgt":6},{"s":"tT538_2.aif","t":"wえぞー","kind":"contains","wgt":6},{"s":"tT538_2.aif","t":"wぎゃーぎゃー","kind":"contains","wgt":6},{"s":"tT539.aif","t":"wがっぷり","kind":"contains","wgt":11},{"s":"tT539.aif","t":"wりじゅーん","kind":"contains","wgt":11},{"s":"tT539.aif","t":"wうんうん","kind":"contains","wgt":11},{"s":"tT540.aif","t":"wがさがさ","kind":"contains","wgt":10},{"s":"tT540.aif","t":"wわいわい","kind":"contains","wgt":10},{"s":"tT540.aif","t":"wびゅんびゅん","kind":"contains","wgt":9},{"s":"tT541.aif","t":"wちまちま","kind":"contains","wgt":11},{"s":"tT541.aif","t":"wちんまり","kind":"contains","wgt":10},{"s":"tT541.aif","t":"wがつがつ","kind":"contains","wgt":10},{"s":"v1","t":"wちまちま","kind":"nearest","wgt":1,"dist":5.36},{"s":"v2","t":"wうとうと","kind":"nearest","wgt":1,"dist":9.11},{"s":"v3","t":"wしわしわ","kind":"nearest","wgt":1,"dist":5.37},{"s":"v4","t":"wえっさえっさ","kind":"nearest","wgt":1,"dist":5.78},{"s":"v5","t":"wおめおめ","kind":"nearest","wgt":1,"dist":9.17},{"s":"v6","t":"wえぞー","kind":"nearest","wgt":1,"dist":5.18},{"s":"v7","t":"wおめおめ","kind":"nearest","wgt":1,"dist":8.51},{"s":"v8","t":"wちでーん","kind":"nearest","wgt":1,"dist":4.91},{"s":"v9","t":"wおぜー","kind":"nearest","wgt":1,"dist":6.16},{"s":"v10","t":"wよぞー","kind":"nearest","wgt":1,"dist":5.05},{"s":"v11","t":"wかさかさ","kind":"nearest","wgt":1,"dist":7.08},{"s":"v12","t":"wがさがさ","kind":"nearest","wgt":1,"dist":5.69},{"s":"v13","t":"wうとうと","kind":"nearest","wgt":1,"dist":3.03},{"s":"v14","t":"wえっさえっさ","kind":"nearest","wgt":1,"dist":6.56},{"s":"v15","t":"wころころ","kind":"nearest","wgt":1,"dist":6.89},{"s":"v16","t":"wぐーすか","kind":"nearest","wgt":1,"dist":8.35},{"s":"v17","t":"wかさかさ","kind":"nearest","wgt":1,"dist":7.73},{"s":"v18","t":"wことこと","kind":"nearest","wgt":1,"dist":5.85},{"s":"v19","t":"wしわしわ","kind":"nearest","wgt":1,"dist":6.4},{"s":"v20","t":"wいちーん","kind":"nearest","wgt":1,"dist":5.57},{"s":"v21","t":"wうん","kind":"nearest","wgt":1,"dist":4.67},{"s":"v22","t":"wいらいら","kind":"nearest","wgt":1,"dist":4.84},{"s":"v23","t":"wことこと","kind":"nearest","wgt":1,"dist":4.96},{"s":"v24","t":"wえっさえっさ","kind":"nearest","wgt":1,"dist":7.28},{"s":"v25","t":"wことこと","kind":"nearest","wgt":1,"dist":7.11},{"s":"v26","t":"wちでーん","kind":"nearest","wgt":1,"dist":5.06},{"s":"v27","t":"wちみゅーん","kind":"nearest","wgt":1,"dist":4.32},{"s":"v28","t":"wえぞー","kind":"nearest","wgt":1,"dist":4.51},{"s":"v29","t":"wおめおめ","kind":"nearest","wgt":1,"dist":4.44},{"s":"v30","t":"wえざーん","kind":"nearest","wgt":1,"dist":7.26},{"s":"v31","t":"wおめおめ","kind":"nearest","wgt":1,"dist":5.14},{"s":"v32","t":"wしわしわ","kind":"nearest","wgt":1,"dist":5.3},{"s":"v33","t":"wことこと","kind":"nearest","wgt":1,"dist":8.11},{"s":"v34","t":"wおぜー","kind":"nearest","wgt":1,"dist":5.23},{"s":"v35","t":"wおめおめ","kind":"nearest","wgt":1,"dist":3.91},{"s":"v36","t":"wおぜー","kind":"nearest","wgt":1,"dist":3.96},{"s":"v38","t":"wおめおめ","kind":"nearest","wgt":1,"dist":4.14},{"s":"v39","t":"wえぞー","kind":"nearest","wgt":1,"dist":3.88},{"s":"v40","t":"wおめおめ","kind":"nearest","wgt":1,"dist":5.52},{"s":"v41","t":"wおぜー","kind":"nearest","wgt":1,"dist":4.15},{"s":"v44","t":"wちみゅーん","kind":"nearest","wgt":1,"dist":6.62},{"s":"v45","t":"wちみゅーん","kind":"nearest","wgt":1,"dist":4.69},{"s":"v46","t":"wえちーん","kind":"nearest","wgt":1,"dist":6.46},{"s":"v47","t":"wえちーん","kind":"nearest","wgt":1,"dist":5.77},{"s":"v48","t":"wじみゅー","kind":"nearest","wgt":1,"dist":7.07},{"s":"v49","t":"wえちーん","kind":"nearest","wgt":1,"dist":6.5},{"s":"v50","t":"wちまちま","kind":"nearest","wgt":1,"dist":3.44},{"s":"v51","t":"wもくもく","kind":"nearest","wgt":1,"dist":3.62},{"s":"v52","t":"wいにー","kind":"nearest","wgt":1,"dist":6.12},{"s":"v53","t":"wことこと","kind":"nearest","wgt":1,"dist":7.99},{"s":"v54","t":"wおめおめ","kind":"nearest","wgt":1,"dist":4.95},{"s":"v56","t":"wことこと","kind":"nearest","wgt":1,"dist":8.71},{"s":"tscene2End00.aif","t":"wでっぷり","kind":"contains","wgt":6},{"s":"tscene2End02.aif","t":"wいだーん","kind":"contains","wgt":7},{"s":"tT509.aif","t":"wおずおず","kind":"contains","wgt":7},{"s":"tT514.aif","t":"wすかすか","kind":"contains","wgt":12},{"s":"tT514.aif","t":"wかすかす","kind":"contains","wgt":12},{"s":"tT518.aif","t":"wうかうか","kind":"contains","wgt":7},{"s":"tT518.aif","t":"wごろごろ","kind":"contains","wgt":5},{"s":"tT518.aif","t":"wげらげら","kind":"contains","wgt":7},{"s":"tT518.aif","t":"wゆらゆら","kind":"contains","wgt":4},{"s":"tT522.aif","t":"wがっかり","kind":"contains","wgt":6},{"s":"tT522.aif","t":"wとぼとぼ","kind":"contains","wgt":4},{"s":"tT525.aif","t":"wばっさり","kind":"contains","wgt":3},{"s":"tT525.aif","t":"wぱさぱさ","kind":"contains","wgt":3},{"s":"tT541.aif","t":"wうっとり","kind":"contains","wgt":10},{"s":"tT540.aif","t":"wぱらぱら","kind":"contains","wgt":7},{"s":"tT540.aif","t":"wきらきら","kind":"contains","wgt":8},{"s":"tT540.aif","t":"wめらめら","kind":"contains","wgt":8}]};
+
+const COL = { video: '#ff5b6a', track: '#f2a63a', word: '#37c9c1' };
+const KIND_EN = { video: 'Visual file', track: 'Sound track', word: 'Onomatopoeia' };
+const SHAPE = { video: 'square', track: 'square', word: 'circle' };
+
+// --- kana -> romaji (so labels carry no Japanese script) ---
+function romaji(s){
+  s = s.replace(/[ァ-ヶ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60));
+  const B = {"あ":"a","い":"i","う":"u","え":"e","お":"o","か":"ka","き":"ki","く":"ku","け":"ke","こ":"ko","が":"ga","ぎ":"gi","ぐ":"gu","げ":"ge","ご":"go","さ":"sa","し":"shi","す":"su","せ":"se","そ":"so","ざ":"za","じ":"ji","ず":"zu","ぜ":"ze","ぞ":"zo","た":"ta","ち":"chi","つ":"tsu","て":"te","と":"to","だ":"da","ぢ":"ji","づ":"zu","で":"de","ど":"do","な":"na","に":"ni","ぬ":"nu","ね":"ne","の":"no","は":"ha","ひ":"hi","ふ":"fu","へ":"he","ほ":"ho","ば":"ba","び":"bi","ぶ":"bu","べ":"be","ぼ":"bo","ぱ":"pa","ぴ":"pi","ぷ":"pu","ぺ":"pe","ぽ":"po","ま":"ma","み":"mi","む":"mu","め":"me","も":"mo","や":"ya","ゆ":"yu","よ":"yo","ら":"ra","り":"ri","る":"ru","れ":"re","ろ":"ro","わ":"wa","を":"o","ん":"n","ぁ":"a","ぃ":"i","ぅ":"u","ぇ":"e","ぉ":"o"};
+  const YO = {"ゃ":"ya","ゅ":"yu","ょ":"yo"};
+  const chars = [...s]; const toks = []; let dbl = false;
+  for (const c of chars){
+    if (c === "っ"){ dbl = true; continue; }
+    if (YO[c]){ const p = toks.pop() || ""; const y = YO[c];
+      if (p === "shi") toks.push("sh" + y.slice(1));
+      else if (p === "chi") toks.push("ch" + y.slice(1));
+      else if (p === "ji") toks.push("j" + y.slice(1));
+      else toks.push(p.replace(/i$/, "") + y);
+      continue; }
+    if (c === "ー"){ const p = toks[toks.length-1] || ""; const m = p.match(/[aiueo]$/); if (m) toks.push(m[0]); continue; }
+    let r = B[c] !== undefined ? B[c] : c;
+    if (dbl){ r = (r[0] || "") + r; dbl = false; }
+    toks.push(r);
+  }
+  return toks.join("");
+}
+
+// ---- graph ----
+const nodes = DATA.nodes.map(n => ({ ...n }));
+// onomatopoeia keep their original kana; tracks/videos are already latin
+nodes.forEach(n => { n.disp = n.label; });
+const byId = new Map(nodes.map(n => [n.id, n]));
+const adj = new Map(nodes.map(n => [n.id, []]));
+DATA.edges.forEach(e => { if (byId.has(e.s) && byId.has(e.t)){ adj.get(e.s).push(e); adj.get(e.t).push(e); } });
+
+nodes.forEach(n => {
+  n.r = n.type === 'word' ? 3.4 + Math.sqrt(n.weight) * 1.15
+      : n.type === 'track' ? 4.2 + Math.sqrt(n.weight) * 0.7
+      : 5.2;
+});
+
+// ---- layout: PCA seed + gentle relax (keeps vector-space meaning) ----
+const W = 1500, H = 1080;
+nodes.forEach(n => { n.wx = 80 + n.x*(W-160); n.wy = 70 + n.y*(H-140); n.sx = n.wx; n.sy = n.wy; n.vx = 0; n.vy = 0; });
+let alpha = 1;
+function tick(){
+  const k = alpha;
+  for (let i = 0; i < nodes.length; i++){
+    const a = nodes[i];
+    for (let j = i+1; j < nodes.length; j++){
+      const b = nodes[j];
+      let dx = a.wx-b.wx, dy = a.wy-b.wy, d2 = dx*dx+dy*dy || 0.01;
+      if (d2 < 90000){
+        const d = Math.sqrt(d2); const minD = a.r+b.r+8;
+        let f = (1600/d2)*k; if (d < minD) f += (minD-d)*0.05;
+        const ux = dx/d, uy = dy/d;
+        a.vx += ux*f; a.vy += uy*f; b.vx -= ux*f; b.vy -= uy*f;
+      }
+    }
+  }
+  DATA.edges.forEach(e => {
+    const a = byId.get(e.s), b = byId.get(e.t); if (!a || !b) return;
+    const dx = b.wx-a.wx, dy = b.wy-a.wy, d = Math.hypot(dx,dy) || 0.01;
+    const L = e.kind === 'nearest' ? 46 : 58; const f = (d-L)*0.012*k;
+    const ux = dx/d, uy = dy/d;
+    a.vx += ux*f; a.vy += uy*f; b.vx -= ux*f; b.vy -= uy*f;
+  });
+  nodes.forEach(n => {
+    n.vx += (n.sx-n.wx)*0.02*k; n.vy += (n.sy-n.wy)*0.02*k;
+    n.wx += n.vx; n.wy += n.vy; n.vx *= 0.82; n.vy *= 0.82;
+  });
+  alpha *= 0.985;
+}
+for (let i = 0; i < 260; i++) tick();
+alpha = 0;
+
+// ---- canvas / camera (sized to the map pane, not the window) ----
+const stage = document.getElementById('stage');
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+let DPR = 1, VW = 0, VH = 0;
+let cam = { x: 0, y: 0, s: 1 };
+function resize(){
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  VW = stage.clientWidth; VH = stage.clientHeight;
+  cv.width = VW * DPR; cv.height = VH * DPR;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  fitCamera();
+}
+function fitCamera(){
+  const pad = 80;
+  cam.s = Math.min((VW - pad*2)/W, (VH - pad*2)/H);
+  cam.x = (VW - W*cam.s)/2; cam.y = (VH - H*cam.s)/2;
+  render();
+}
+const toScreen = n => ({ x: n.wx*cam.s + cam.x, y: n.wy*cam.s + cam.y });
+
+// ---- interaction state ----
+let focusId = null, hoverId = null, focusSet = null;
+// Onomatopoeia is the relay corpus. Expand two hops through the shared word so a
+// node's relations read as a triad — Visual — Onomatopoeia — Sound (either direction):
+//  · a visual  -> its nearest word -> every sound that voices that word
+//  · a sound   -> the words it voices -> every visual nearest to those words
+//  · a word    -> both sides at once (the hub itself)
+function relationSet(id){
+  const node = byId.get(id);
+  const set = new Set([id]);
+  const words = node.type === 'word' ? [id]
+    : adj.get(id).map(e => e.s === id ? e.t : e.s).filter(x => byId.get(x).type === 'word');
+  words.forEach(w => { set.add(w); adj.get(w).forEach(e => { set.add(e.s); set.add(e.t); }); });
+  return set;
+}
+
+function render(){
+  ctx.clearRect(0, 0, VW, VH);
+  // all nodes are always shown; hover/pin only emphasises the triad through the word hub
+  const hlSet = focusSet || (hoverId ? relationSet(hoverId) : null);
+
+  // edges
+  ctx.lineWidth = 1;
+  DATA.edges.forEach(e => {
+    const a = byId.get(e.s), b = byId.get(e.t);
+    if (!a || !b) return;
+    const on = hlSet && hlSet.has(e.s) && hlSet.has(e.t);
+    let op;
+    if (on) op = 0.65;
+    else if (hlSet) op = 0.05;                    // others recede but stay faintly present
+    else op = e.kind === 'nearest' ? 0.10 : 0.13;
+    const p = toScreen(a), q = toScreen(b);
+    ctx.strokeStyle = hexA(e.kind === 'nearest' ? COL.video : COL.track, op);
+    ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke();
+  });
+
+  // nodes
+  const showLabelAll = cam.s > 0.62;
+  nodes.forEach(n => {
+    const p = toScreen(n), r = n.r*cam.s;
+    const dim = hlSet && !hlSet.has(n.id);        // recede, never vanish
+    const col = COL[n.type];
+    const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r*2.6);
+    g.addColorStop(0, hexA(col, dim ? 0.12 : 0.30)); g.addColorStop(1, hexA(col, 0));
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y, r*2.6, 0, 7); ctx.fill();
+    // core: square for visuals/sound, circle for onomatopoeia
+    ctx.fillStyle = dim ? hexA(col, 0.5) : col;
+    if (SHAPE[n.type] === 'square'){ ctx.fillRect(p.x - r, p.y - r, r*2, r*2); }
+    else { ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 7); ctx.fill(); }
+    const active = n.id === focusId || n.id === hoverId;
+    if (active){
+      ctx.strokeStyle = hexA('#ffffff', 0.9); ctx.lineWidth = 1.5;
+      if (SHAPE[n.type] === 'square'){ ctx.strokeRect(p.x - r - 3, p.y - r - 3, (r+3)*2, (r+3)*2); }
+      else { ctx.beginPath(); ctx.arc(p.x, p.y, r+3, 0, 7); ctx.stroke(); }
+    }
+    const big = n.type === 'word' && n.weight >= 40;
+    const inHl = hlSet && hlSet.has(n.id);
+    const label = active || inHl || (!hlSet && (big || (showLabelAll && n.type !== 'video')));
+    if (label){
+      ctx.font = (n.id === focusId ? '700 ' : '400 ') + '12px "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      ctx.fillStyle = dim ? hexA('#c9cdd6', 0.35) : '#e6e9f0';
+      ctx.shadowColor = 'rgba(0,0,0,0.9)'; ctx.shadowBlur = 4;
+      ctx.fillText(n.disp, p.x, p.y + r + 3); ctx.shadowBlur = 0;
+    }
+  });
+}
+
+function hexA(hex, a){
+  const h = hex.replace('#','');
+  return `rgba(${parseInt(h.substr(0,2),16)},${parseInt(h.substr(2,2),16)},${parseInt(h.substr(4,2),16)},${a})`;
+}
+
+// ---- animation only while heated / dragging ----
+let raf = null;
+function heat(v){ alpha = Math.max(alpha, v); if (!raf) raf = requestAnimationFrame(loop); }
+function loop(){ if (alpha > 0.008){ tick(); render(); raf = requestAnimationFrame(loop); } else { alpha = 0; render(); raf = null; } }
+
+// ---- picking (pointer coords relative to canvas) ----
+function localXY(ev){ const rc = cv.getBoundingClientRect(); return { x: ev.clientX - rc.left, y: ev.clientY - rc.top }; }
+function pick(mx, my){
+  let best = null, bd = 18;
+  for (const n of nodes){
+    const p = toScreen(n); const d = Math.hypot(p.x-mx, p.y-my);
+    const rr = Math.max(n.r*cam.s, 5) + 4;
+    if (d < rr && d < bd){ bd = d; best = n; }
+  }
+  return best;
+}
+
+let drag = null, panning = null, moved = false;
+cv.addEventListener('pointerdown', ev => {
+  const { x, y } = localXY(ev); const n = pick(x, y); moved = false;
+  if (n) drag = { n }; else { panning = { x: ev.clientX, y: ev.clientY, cx: cam.x, cy: cam.y }; cv.classList.add('grabbing'); }
+  cv.setPointerCapture(ev.pointerId);
+});
+cv.addEventListener('pointermove', ev => {
+  const { x, y } = localXY(ev);
+  if (drag){
+    moved = true;
+    drag.n.wx = (x - cam.x)/cam.s; drag.n.wy = (y - cam.y)/cam.s;
+    drag.n.sx = drag.n.wx; drag.n.sy = drag.n.wy; drag.n.vx = drag.n.vy = 0;
+    heat(0.3);
+  } else if (panning){
+    moved = true;
+    cam.x = panning.cx + (ev.clientX - panning.x); cam.y = panning.cy + (ev.clientY - panning.y); render();
+  } else {
+    const n = pick(x, y); const id = n ? n.id : null;
+    if (id !== hoverId){ hoverId = id; cv.style.cursor = n ? 'pointer' : 'grab'; if (!raf) render(); }
+  }
+});
+cv.addEventListener('pointerup', ev => {
+  if (drag && !moved) selectNode(drag.n);
+  else if (panning && !moved) selectNode(null);
+  drag = null; panning = null; cv.classList.remove('grabbing');
+});
+cv.addEventListener('pointerleave', () => { if (hoverId){ hoverId = null; if (!raf) render(); } });
+cv.addEventListener('wheel', ev => {
+  ev.preventDefault();
+  const { x, y } = localXY(ev);
+  const ns = Math.max(0.25, Math.min(3.4, cam.s * Math.exp(-ev.deltaY*0.0012)));
+  const k = ns/cam.s; cam.x = x - (x - cam.x)*k; cam.y = y - (y - cam.y)*k; cam.s = ns; render();
+}, { passive: false });
+
+// ---- selection + detail (right window) ----
+const inner = document.getElementById('detailInner');
+function selectNode(n){
+  focusId = n ? n.id : null;
+  focusSet = n ? relationSet(n.id) : null;
+  renderDetail(n);
+  render();
+}
+function el(tag, cls, txt){ const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; }
+// second hop of the triad: from a set of relay words, gather the nodes of the
+// target type on the far side (visuals via nearest edges, sounds via contains edges)
+function relayOut(wordIds, targetType){
+  const acc = new Map();
+  wordIds.forEach(wid => {
+    (adj.get(wid) || []).forEach(e => {
+      const other = e.s === wid ? e.t : e.s;
+      const nd = byId.get(other); if (!nd || nd.type !== targetType) return;
+      if (targetType === 'video' && e.kind === 'nearest'){
+        const cur = acc.get(other);
+        if (!cur || e.dist < cur.k) acc.set(other, { id: other, r: e.dist!=null?e.dist.toFixed(1):'', k: e.dist });
+      } else if (targetType === 'track' && e.kind === 'contains'){
+        const cur = acc.get(other), k = e.wgt;
+        if (!cur || k > cur.k) acc.set(other, { id: other, r: '×'+k, k });
+      }
+    });
+  });
+  const arr = [...acc.values()];
+  arr.sort((a,b) => targetType === 'video' ? a.k - b.k : b.k - a.k);
+  return arr;
+}
+function renderDetail(n){
+  inner.innerHTML = '';
+  if (!n){
+    const ph = el('div', 'placeholder');
+    ph.innerHTML = 'Hover a node to trace its links.<br>Click any node to pin its relations here.';
+    inner.appendChild(ph); return;
+  }
+  const kind = el('div', 'kind', KIND_EN[n.type]); kind.style.color = COL[n.type]; inner.appendChild(kind);
+  inner.appendChild(el('h2', null, n.disp));
+  const es = adj.get(n.id);
+  const meta = el('div', 'metaline');
+  if (n.type === 'word'){
+    // the hub itself: both sides at once
+    meta.textContent = `Appears ${n.weight}× · relay word — sounds on one side, visuals on the other`;
+    inner.appendChild(meta);
+    const tracks = es.filter(e => e.kind === 'contains').map(e => ({ id: e.s, r: '×' + e.wgt, k: e.wgt })).sort((a,b)=>b.k-a.k);
+    const vids = es.filter(e => e.kind === 'nearest').map(e => ({ id: e.s, r: e.dist!=null?e.dist.toFixed(1):'', k: e.dist })).sort((a,b)=>a.k-b.k);
+    inner.appendChild(group('Sound → this onomatopoeia', tracks));
+    inner.appendChild(group('This onomatopoeia → visual', vids));
+  } else if (n.type === 'track'){
+    meta.textContent = `~${n.weight} triggers · Sound → onomatopoeia → visual`;
+    inner.appendChild(meta);
+    const words = es.filter(e => e.kind === 'contains').map(e => ({ id: e.t, r: '×' + e.wgt, k: e.wgt })).sort((a,b)=>b.k-a.k);
+    inner.appendChild(group('Onomatopoeia it voices', words));
+    // second hop: visuals reached through those words
+    inner.appendChild(group('Visuals reached through them', relayOut(words.map(w=>w.id), 'video')));
+  } else {
+    meta.textContent = 'Projected onto 10 axes · Visual → onomatopoeia → sound';
+    inner.appendChild(meta);
+    const near = es.filter(e => e.kind === 'nearest').map(e => ({ id: e.t, r: e.dist!=null?e.dist.toFixed(1):'', k: e.dist }));
+    inner.appendChild(group('Nearest onomatopoeia', near));
+    // second hop: sounds reached through that word
+    inner.appendChild(group('Sounds reached through it', relayOut(near.map(w=>w.id), 'track')));
+  }
+}
+function group(title, items){
+  const g = el('div', 'grp');
+  g.appendChild(el('h3', null, title + ' · ' + items.length));
+  const ul = el('ul');
+  if (!items.length){ const li = el('li'); li.style.cursor = 'default'; li.innerHTML = '<span style="color:var(--faint)">none</span>'; ul.appendChild(li); }
+  items.forEach(it => {
+    const nd = byId.get(it.id); if (!nd) return;
+    const li = el('li');
+    li.innerHTML = `<span style="color:${COL[nd.type]}">${nd.disp}</span><span class="v">${it.r||''}</span>`;
+    li.addEventListener('click', () => { centerOn(nd); selectNode(nd); });
+    ul.appendChild(li);
+  });
+  g.appendChild(ul); return g;
+}
+function centerOn(n){ const p = toScreen(n); cam.x += VW/2 - p.x; cam.y += VH/2 - p.y; render(); }
+
+window.addEventListener('resize', resize);
+resize();
+renderDetail(null);
+</script>

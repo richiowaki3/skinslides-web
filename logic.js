@@ -28,8 +28,12 @@ async function initSkinslides() {
     try {
         // Local videos folder auto-detection
         try {
-            const testRes = await fetch("videos/05-Sss720p.mp4", { method: 'HEAD' });
-            if (testRes.ok) {
+            // 720p / 360p のどちらかが置いてあればローカルとみなす（縮小版のみの構成にも対応）
+            const probes = await Promise.all(
+                [HIGH_QUALITY_SUFFIX, LOW_QUALITY_SUFFIX].map(sfx =>
+                    fetch(`videos/05-${sfx}.mp4`, { method: 'HEAD' }).then(r => r.ok).catch(() => false))
+            );
+            if (probes.some(Boolean)) {
                 console.log("[logic] Local /videos/ folder detected. Using local videos same-origin source.");
                 VIDEO_BASE_PATH = "videos/";
                 addDecisionLog("Local videos folder detected. Using local videos (no CORS restriction, 50x Web Audio boost active).", "success");
@@ -178,6 +182,16 @@ async function detectVideoQuality(basePath) {
             if (!r.ok) { console.warn(`[logic] ${LOW_QUALITY_SUFFIX} assets not found — using ${HIGH_QUALITY_SUFFIX}.`); choice = "high"; }
         } catch (e) {
             console.warn(`[logic] ${LOW_QUALITY_SUFFIX} existence check failed — using ${HIGH_QUALITY_SUFFIX}.`); choice = "high";
+        }
+    }
+    // 4) 通常版が実在するか確認（無ければ縮小版へフォールバック）
+    // ローカルの videos/ に360pしか置いていない場合、高速回線だと720pを選んで全滅するため。
+    if (choice === "high") {
+        try {
+            const r = await fetch(basePath + `01-${HIGH_QUALITY_SUFFIX}.mp4` + (window.VIDEO_CACHE_BUST || ""), { method: "HEAD", mode: "cors" });
+            if (!r.ok) { console.warn(`[logic] ${HIGH_QUALITY_SUFFIX} assets not found — using ${LOW_QUALITY_SUFFIX}.`); choice = "low"; }
+        } catch (e) {
+            console.warn(`[logic] ${HIGH_QUALITY_SUFFIX} existence check failed — using ${LOW_QUALITY_SUFFIX}.`); choice = "low";
         }
     }
     window.VIDEO_QUALITY_SUFFIX = choice === "low" ? LOW_QUALITY_SUFFIX : HIGH_QUALITY_SUFFIX;

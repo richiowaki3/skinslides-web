@@ -158,6 +158,84 @@
             box-sizing: border-box;
         }
 
+        /* ソロ(fix枠)特殊動画: 3840x2160キャンバスの中央に720p系16:9を回転無しで投影 */
+        #solo-video-wrap {
+            position: absolute; inset: 0; z-index: 5;
+            display: none; align-items: center; justify-content: center;
+            background: #000000;
+        }
+        #solo-video-wrap.active { display: flex; }
+        #solo-video {
+            width: 2560px; height: 1440px; /* 720p x2、中央投影・回転なし */
+            object-fit: contain; background: #000000;
+        }
+
+        /* test-level2: 水道管パイプ台。474x237カードを横に辺で連結して伸ばす。
+           常に最新3枚を表示。コンベア(#pipe-conveyor)を translateX して中央に追従する。 */
+        #pipe-stage {
+            position: absolute; inset: 0; z-index: 6;
+            display: none; background: #000000; overflow: hidden;
+        }
+        #pipe-stage.active { display: block; }
+        #pipe-conveyor {
+            position: absolute; inset: 0;
+            transition: transform 0.5s ease;
+            will-change: transform;
+        }
+        .pipe-card {
+            position: absolute;                /* left/top/transform(rotate) は JS が個別に設定 */
+            width: 474px; height: 237px;
+            object-fit: contain; background: #000000;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+            will-change: opacity;
+        }
+        .pipe-card.show { opacity: 1; }
+
+        /* ライブ質感ベクトルマップ */
+        #lexmap-wrap {
+            position: relative;
+            width: 100%;
+            height: 62vh;
+            min-height: 440px;
+            background:
+                radial-gradient(900px 620px at 60% 22%, #12121a 0%, #08080b 62%),
+                #08080b;
+            border: 1px solid var(--border-color);
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+        #lexmap-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
+        #lexmap-legend {
+            position: absolute; left: 16px; bottom: 12px; z-index: 2; pointer-events: none;
+            display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+            font-size: 11px; color: var(--text-muted); letter-spacing: 0.03em;
+        }
+        #lexmap-legend span { display: inline-flex; align-items: center; gap: 7px; }
+        #lexmap-legend .mk { width: 10px; height: 10px; box-shadow: 0 0 8px currentColor; }
+        #lexmap-legend .mk.sq { border-radius: 0; }
+        #lexmap-legend .mk.ci { border-radius: 50%; }
+        #lexmap-legend .hint { color: var(--faint, #4a4f60); }
+
+        /* マップ下のログ */
+        .lexmap-log-wrap { margin-top: 12px; border: 1px solid var(--border-color); background: #050505; }
+        .lexmap-log-title {
+            padding: 6px 12px; border-bottom: 1px solid var(--border-color);
+            font-size: 10px; letter-spacing: 1px; color: #ffffff; text-transform: uppercase; font-weight: 700;
+        }
+        .lexmap-log {
+            height: 190px; overflow-y: auto; padding: 8px 12px;
+            font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11px; line-height: 1.55;
+        }
+        .lexmap-log .log-line { white-space: nowrap; }
+        .lexmap-log .log-line.warning { color: #ffb44a; }
+        .lexmap-log .log-line.success { color: #00ffaa; }
+        .lexmap-log .log-line.error   { color: #ff5b6a; }
+        .lexmap-log .log-line.trigger { color: #37c9c1; }
+        .lexmap-log .log-line.cut-up  { color: #8bb4ff; }
+        .lexmap-log .log-line.system  { color: #c3c7d2; }
+        .lexmap-log .log-line.text-muted { color: #666; }
+
         /* Analysis Dashboard Styles - Swiss Design / Helvetica / Sharp */
         .analysis-dashboard {
             width: 100%;
@@ -390,12 +468,15 @@
         <div id="overlay-buttons-container" style="display: none; gap: 20px; margin-bottom: 20px;">
             <div class="start-btn" id="choose-plan-a">Play A</div>
             <div class="start-btn" id="choose-plan-b">Play B</div>
+            <div class="start-btn" id="choose-test-level2">test-level2</div>
+            <div class="start-btn" id="choose-special">special</div>
+            <div class="start-btn" id="choose-combination">Combination</div>
         </div>
         
         <div class="credits" style="margin-top: 45px; font-family: Helvetica, Arial, sans-serif; font-size: 11px; line-height: 1.7; color: #8892b0; text-align: center; font-weight: 300; letter-spacing: 0.5px;">
             Construction: Richi Owaki<br>
             Performance: Alessio Silvestrin<br>
-            Sound: Otomo Yoshihide<br>
+            Sound: Yoshihide Otomo<br>
             Original Programming: Satoshi Hama (YCAM InterLab)<br>
             Technical Support (2009): YCAM InterLab<br>
             <br>
@@ -405,7 +486,7 @@
         
         <div class="description" style="margin-top: 35px; max-width: 600px; font-family: Helvetica, Arial, sans-serif; font-size: 11px; line-height: 1.7; color: #636f88; text-align: center; font-weight: 300; letter-spacing: 0.5px;">
             Conceived as an “interface for a permanent preservation of the dancer’s movements,” this video dance piece is based on the idea of producing images and sound first, and subsequently programming a data-choreography out of the single elements.<br><br>
-            While the original 2009 version featured three 1.8m x 0.9m acrylic screens embedded in the floor, the 2026 Web update utilizes advanced dynamic video and acoustic analysis to newly analyze the 55 video clips and sound assets. This allows the physical dynamics of the footage to sync asynchronously and organically with Otomo Yoshihide's soundtrack, weaving a brand-new, infinitely generated choreography.
+            While the original 2009 version featured three 1.8m x 0.9m acrylic screens embedded in the floor, the 2026 Web update utilizes advanced dynamic video and acoustic analysis to newly analyze the 55 video clips and sound assets. This allows the physical dynamics of the footage to sync asynchronously and organically with Yoshihide Otomo's soundtrack, weaving a brand-new, infinitely generated choreography.
         </div>
     </div>
     <header>
@@ -433,6 +514,7 @@
                 <select id="mode-select">
                     <option value="metadata" selected>Offline Metadata (事前精密データ)</option>
                     <option value="realtime">Real-time Reactive (リアルタイム解析)</option>
+                    <option value="test-level2">test-level2 (水道管パイプ / L2のみ)</option>
                 </select>
             </div>
 
@@ -533,6 +615,12 @@
             <!-- Duet Collage Single Frame Container (Pattern B Test) -->
             <div class="collage-wrapper" id="duet-collage-wrapper">
                 <div id="duet-collage-container"></div>
+                <!-- ソロ(fix枠)用: 720p・回転無し・センター投影の特殊動画 -->
+                <div id="solo-video-wrap"><video id="solo-video" playsinline></video></div>
+            </div>
+            <!-- test-level2: 水道管パイプ台 (474x237カードを辺で連結・3枚表示) -->
+            <div id="pipe-stage">
+                <div id="pipe-conveyor"></div>
             </div>
         </div>
         </div>
@@ -541,7 +629,7 @@
     <!-- 分析ダッシュボード (スクロールすると表示されるエリア) -->
     <div class="analysis-dashboard">
         <div class="dashboard-title-area">
-            <h2 class="dashboard-title">Real-Time Analysis & Execution Monitor <span style="font-size: 0.9rem; color: var(--text-muted); font-weight: normal; margin-left: 10px;">v1.12.1</span></h2>
+            <h2 class="dashboard-title">Real-Time Analysis & Execution Monitor <span style="font-size: 0.9rem; color: var(--text-muted); font-weight: normal; margin-left: 10px;">v1.14.4</span></h2>
         </div>
         
         <!-- タイムラインセクション (Agent A) -->
@@ -572,63 +660,22 @@
             </div>
         </div>
         
-        <!-- モニターカードグリッド -->
-        <div class="monitor-grid">
-            <!-- Screen 1 Status -->
-            <div class="monitor-card" id="card-screen-1">
-                <div class="card-header">SCREEN 1</div>
-                <div class="card-body">
-                    <div class="stat-row"><span class="stat-label">State:</span><span class="stat-val" id="scr1-state">IDLE</span></div>
-                    <div class="stat-row"><span class="stat-label">Video:</span><span class="stat-val" id="scr1-video">-</span></div>
-                    <div class="stat-row"><span class="stat-label">LMA (W,T,S,H):</span><span class="stat-val" id="scr1-lma">-</span></div>
-                    <div class="stat-row"><span class="stat-label">Activity Level:</span><span class="stat-val" id="scr1-activity">-</span></div>
-                    <div class="stat-row"><span class="stat-label">Rotation / Dir:</span><span class="stat-val" id="scr1-rot">-</span></div>
-                    <div class="stat-row"><span class="stat-label">Freezes:</span><span class="stat-val" id="scr1-freezes">-</span></div>
-                </div>
+        <!-- ライブ質感ベクトルマップ（旧モニターカードを置換）
+             再生中の映像・オノマトペ・音トラックが発光し、映像—語—音の三者関係が光る -->
+        <div id="lexmap-wrap">
+            <canvas id="lexmap-canvas"></canvas>
+            <div id="lexmap-legend">
+                <span><span class="mk sq" style="color:#ff5b6a"></span>Visuals 52</span>
+                <span><span class="mk sq" style="color:#f2a63a"></span>Sound 47</span>
+                <span><span class="mk ci" style="color:#37c9c1"></span>Onomatopoeia 82</span>
+                <span class="hint">再生中の 映像—語—音 が発光 · ホバーで関係 · ホイールで拡大</span>
             </div>
-            <!-- Screen 2 Status -->
-            <div class="monitor-card" id="card-screen-2">
-                <div class="card-header">SCREEN 2</div>
-                <div class="card-body">
-                    <div class="stat-row"><span class="stat-label">State:</span><span class="stat-val" id="scr2-state">IDLE</span></div>
-                    <div class="stat-row"><span class="stat-label">Video:</span><span class="stat-val" id="scr2-video">-</span></div>
-                    <div class="stat-row"><span class="stat-label">LMA (W,T,S,H):</span><span class="stat-val" id="scr2-lma">-</span></div>
-                    <div class="stat-row"><span class="stat-label">Activity Level:</span><span class="stat-val" id="scr2-activity">-</span></div>
-                    <div class="stat-row"><span class="stat-label">Rotation / Dir:</span><span class="stat-val" id="scr2-rot">-</span></div>
-                    <div class="stat-row"><span class="stat-label">Freezes:</span><span class="stat-val" id="scr2-freezes">-</span></div>
-                </div>
-            </div>
-            <!-- Screen 3 Status -->
-            <div class="monitor-card" id="card-screen-3">
-                <div class="card-header">SCREEN 3</div>
-                <div class="card-body">
-                    <div class="stat-row"><span class="stat-label">State:</span><span class="stat-val" id="scr3-state">IDLE</span></div>
-                    <div class="stat-row"><span class="stat-label">Video:</span><span class="stat-val" id="scr3-video">-</span></div>
-                    <div class="stat-row"><span class="stat-label">LMA (W,T,S,H):</span><span class="stat-val" id="scr3-lma">-</span></div>
-                    <div class="stat-row"><span class="stat-label">Activity Level:</span><span class="stat-val" id="scr3-activity">-</span></div>
-                    <div class="stat-row"><span class="stat-label">Rotation / Dir:</span><span class="stat-val" id="scr3-rot">-</span></div>
-                    <div class="stat-row"><span class="stat-label">Freezes:</span><span class="stat-val" id="scr3-freezes">-</span></div>
-                </div>
-            </div>
-            <!-- Screen 4 Status -->
-            <div class="monitor-card" id="card-screen-4">
-                <div class="card-header">SCREEN 4</div>
-                <div class="card-body">
-                    <div class="stat-row"><span class="stat-label">State:</span><span class="stat-val" id="scr4-state">IDLE</span></div>
-                    <div class="stat-row"><span class="stat-label">Video:</span><span class="stat-val" id="scr4-video">-</span></div>
-                    <div class="stat-row"><span class="stat-label">LMA (W,T,S,H):</span><span class="stat-val" id="scr4-lma">-</span></div>
-                    <div class="stat-row"><span class="stat-label">Activity Level:</span><span class="stat-val" id="scr4-activity">-</span></div>
-                    <div class="stat-row"><span class="stat-label">Rotation / Dir:</span><span class="stat-val" id="scr4-rot">-</span></div>
-                    <div class="stat-row"><span class="stat-label">Freezes:</span><span class="stat-val" id="scr4-freezes">-</span></div>
-                </div>
-            </div>
-            <!-- Decision Log Card -->
-            <div class="monitor-card log-card">
-                <div class="card-header">EXECUTIVE DECISION LOG</div>
-                <div class="card-body scroll-log" id="decision-log">
-                    <div class="log-line text-muted">Awaiting start...</div>
-                </div>
-            </div>
+        </div>
+
+        <!-- マップ下のログ -->
+        <div class="lexmap-log-wrap">
+            <div class="lexmap-log-title">Execution Log</div>
+            <div id="decision-log" class="lexmap-log"><div class="log-line text-muted">Awaiting start…</div></div>
         </div>
     </div>
 
@@ -654,7 +701,8 @@
         window.addEventListener('DOMContentLoaded', updateAppScale);
         updateAppScale();
     </script>
-    <script src="player.js?v=1.12.1"></script>
-    <script src="audio_trigger_logic.js?v=1.12.1"></script>
+    <script src="player.js?v=1.14.4"></script>
+    <script src="audio_trigger_logic.js?v=1.14.4"></script>
+    <script src="lexicon_live.js?v=1.14.4"></script>
 </body>
 </html>

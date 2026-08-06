@@ -50,40 +50,71 @@ let lastTriggerTimeRealtime = 0;
 let trackVocab = [];
 let trackDominantMotion = "刻み";
 
-window.audioBufferCache = {}; // filename -> AudioBuffer
+window.audioBufferCache = {}; // filename -> AudioBuffer（遅延デコード・LRU上限つき）
 
-async function preloadAllAudios(basePath, onProgress) {
-    let loadedCount = 0;
-    const filesToLoad = Array.from(ALLOWED_TRACKS_SET).map(id => {
+// モバイル/タブレット判定（iPadOSのデスクトップ表示は Mac + マルチタッチで判別）
+const IS_MOBILE_DEVICE = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+    || (navigator.maxTouchPoints > 1 && /Mac/i.test(navigator.platform));
+
+// cut-up が選曲に使う全トラックのファイル名リスト（プリロードはしない）
+window.cutupTrackFiles = [];
+function buildCutupTrackFileList() {
+    return Array.from(ALLOWED_TRACKS_SET).map(id => {
         if (id.includes("scene2end")) {
             return id.replace("scene2end", "scene2End") + ".mp3";
         }
         // 先頭の t のみ大文字化して実ファイル名の大小に合わせる（例: t525fix -> T525fix.mp3）
         return id.replace(/^t/, "T") + ".mp3";
     });
-    const totalCount = filesToLoad.length;
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    const tempCtx = new AudioContextClass();
-    
-    const promises = filesToLoad.map(async (file) => {
-        const url = basePath + file + (window.VIDEO_CACHE_BUST || "");
+}
+
+// --- 音声の遅延デコード ---
+// 旧実装は起動時に38曲すべてを AudioBuffer(生PCM) へ展開しており、合計約2GBに達して
+// iPhone Safari のタブメモリ上限を超えクラッシュしていた（"A problem repeatedly occurred"）。
+// 現在は「そのスライスで鳴らす曲だけ」を取得・デコードし、LRUで上限本数を保つ。
+// 圧縮データのHTTPキャッシュはブラウザ任せ（二重キャッシュしない）。
+const AUDIO_BUFFER_CACHE_MAX = IS_MOBILE_DEVICE ? 3 : 8;
+let audioBufferLRU = []; // 使った順（末尾が最新）
+const audioBufferInflight = {}; // filename -> Promise（同時要求のデデュープ）
+let decodeCtx = null; // audioCtx 未初期化時のフォールバック用
+
+function touchAudioBufferLRU(file) {
+    audioBufferLRU = audioBufferLRU.filter(f => f !== file);
+    audioBufferLRU.push(file);
+    while (audioBufferLRU.length > AUDIO_BUFFER_CACHE_MAX) {
+        const evict = audioBufferLRU.shift();
+        delete window.audioBufferCache[evict];
+        // 再生中の BufferSource はノード自身が参照を保持しているため、キャッシュから外しても安全
+    }
+}
+
+async function getAudioBuffer(file) {
+    if (window.audioBufferCache[file]) {
+        touchAudioBufferLRU(file);
+        return window.audioBufferCache[file];
+    }
+    if (audioBufferInflight[file]) return audioBufferInflight[file];
+
+    const url = AUDIO_BASE_PATH + file + (window.VIDEO_CACHE_BUST || "");
+    audioBufferInflight[file] = (async () => {
         try {
             const res = await fetch(url, { mode: 'cors' });
             if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
             const arrayBuffer = await res.arrayBuffer();
-            const decoded = await tempCtx.decodeAudioData(arrayBuffer);
+            const ctx = audioCtx || decodeCtx
+                || (decodeCtx = new (window.AudioContext || window.webkitAudioContext)());
+            const decoded = await ctx.decodeAudioData(arrayBuffer);
             window.audioBufferCache[file] = decoded;
+            touchAudioBufferLRU(file);
+            return decoded;
         } catch (e) {
-            console.warn(`[demo] Failed to preload audio buffer for ${file}:`, e);
+            console.warn(`[demo] Failed to fetch/decode audio for ${file}:`, e);
+            return null;
         } finally {
-            loadedCount++;
-            if (onProgress) onProgress(loadedCount, totalCount);
+            delete audioBufferInflight[file];
         }
-    });
-    
-    await Promise.all(promises);
-    await tempCtx.close();
-    console.log(`[demo] Preloaded ${Object.keys(window.audioBufferCache).length} audio buffers.`);
+    })();
+    return audioBufferInflight[file];
 }
 
 // Fetch metadata files
@@ -149,10 +180,15 @@ async function loadMetadata() {
         const playBtn = document.getElementById("play-btn");
         const cutupBtn = document.getElementById("cutup-btn");
         
+        // cut-up の選曲候補リストを構築（音声本体はスライス再生時に遅延デコードする。
+        // 旧来の「全曲事前デコード」は約2GBのPCMを常駐させ、iPhoneでクラッシュしていた）
+        window.cutupTrackFiles = buildCutupTrackFileList();
+
         // FASTモード(?fast=1): プリロードを飛ばして即ボタン表示。test-level2の動作確認用。
         // (test-level2は動画をR2から直接ストリーミングし、動画終了で進むため音声・事前DL不要)
+        // モバイル端末でも動画Blobプリロードはスキップ（メモリ節約。直接ストリーミングで再生）
         const FAST_TEST = new URLSearchParams(location.search).has("fast");
-        if (!FAST_TEST) {
+        if (!FAST_TEST && !IS_MOBILE_DEVICE) {
             if (preloadProgress) preloadProgress.textContent = "0% (0/18 videos)";
             if (overlayProgress) overlayProgress.textContent = "0%";
             await window.preloadAllVideos(VIDEO_BASE_PATH, (loaded, total) => {
@@ -160,15 +196,8 @@ async function loadMetadata() {
                 if (preloadProgress) preloadProgress.textContent = `${pct}% (${loaded}/${total} videos)`;
                 if (overlayProgress) overlayProgress.textContent = `${pct}%`;
             });
-
-            // 音響のAudioBufferプリロードを一括開始
-            if (preloadProgress) preloadProgress.textContent = "0% (0/38 audios)";
-            if (overlayProgress) overlayProgress.textContent = "0%";
-            await preloadAllAudios(AUDIO_BASE_PATH, (loaded, total) => {
-                const pct = Math.round((loaded / total) * 100);
-                if (preloadProgress) preloadProgress.textContent = `${pct}% (${loaded}/${total} audios)`;
-                if (overlayProgress) overlayProgress.textContent = `${pct}%`;
-            });
+        } else if (IS_MOBILE_DEVICE) {
+            console.warn("[demo] Mobile device: 動画Blob/音声の事前ロードをスキップ（直接ストリーミング+遅延デコード）。");
         } else {
             console.warn("[demo] FAST test mode: プリロードをスキップ(test-level2はR2から直接再生)。");
         }
@@ -941,16 +970,17 @@ function hideSoloVideo() {
     if (collageContainer) collageContainer.style.opacity = "1";
 }
 
-function playNextCutUpSlice(agentId) {
+async function playNextCutUpSlice(agentId) {
     if (!isCutUpPlaying) return;
-    
-    const fileKeys = Object.keys(window.audioBufferCache);
+
+    const fileKeys = (window.cutupTrackFiles && window.cutupTrackFiles.length)
+        ? window.cutupTrackFiles : Object.keys(window.audioBufferCache);
     if (fileKeys.length === 0) {
-        logMessage("ERROR", "No preloaded audio buffers found for cut-up!");
+        logMessage("ERROR", "No cut-up track list available!");
         stopCutUpPlayback();
         return;
     }
-    
+
     // Pick random track — fix枠(ノンストップ)は Agent B 専用。Agent A の候補からは除外する。
     let pickKeys = fileKeys;
     if (agentId === "AgentA") {
@@ -958,8 +988,16 @@ function playNextCutUpSlice(agentId) {
         if (pickKeys.length === 0) pickKeys = fileKeys;
     }
     const randomFile = pickKeys[Math.floor(Math.random() * pickKeys.length)];
-    const audioBuffer = window.audioBufferCache[randomFile];
-    
+    // 遅延デコード: この曲の AudioBuffer をここで取得（キャッシュ済みなら即時）
+    const audioBuffer = await getAudioBuffer(randomFile);
+    if (!isCutUpPlaying) return; // デコード待ちの間に停止された
+    if (!audioBuffer) {
+        // 取得失敗（ネットワーク等）: 少し待って別トラックで再試行
+        logMessage("ERROR", `Failed to load ${randomFile} — retrying with another track.`);
+        setTimeout(() => { if (isCutUpPlaying) playNextCutUpSlice(agentId); }, 1000);
+        return;
+    }
+
     // Find metadata
     const trackData = audioMetadataPool.find(t => {
         const normFileId = t.file_id.replace(/\.(aif|aiff|mp3)$/i, '').toLowerCase();

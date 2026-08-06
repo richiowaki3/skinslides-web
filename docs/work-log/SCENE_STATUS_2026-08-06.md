@@ -1,5 +1,28 @@
 # skinslides 作業ログ（2026-08-06）— Combination をメインへ移行
 
+---
+
+## 追記（同日・v1.15.1）: iPhone クラッシュ修正
+
+公開ページが iPhone Safari で「A problem repeatedly occurred」を出して開けなかった。
+原因は**起動時の全曲プリロード**: 38曲を AudioBuffer（生PCM）へ展開すると合計約2GBになり、
+iOS のタブメモリ上限を超えてクラッシュ→自動再読込→再クラッシュのループに入っていた。
+
+対処（`audio_trigger_logic.js`）:
+
+- 音声は**遅延デコード**へ全面変更。cut-up のスライスが選曲した瞬間に fetch + decode し、
+  LRU キャッシュ（モバイル3本／デスクトップ8本、`AUDIO_BUFFER_CACHE_MAX`）で常駐を制限。
+  選曲候補は `window.cutupTrackFiles`（ALLOWED_TRACKS_SET 由来）を使う
+- `playNextCutUpSlice()` を async 化。デコード待ち中の停止と取得失敗のリトライをガード
+- モバイル判定 `IS_MOBILE_DEVICE`（UA + iPadOSデスクトップ表示）を追加し、
+  モバイルでは動画Blobプリロード（18本）もスキップ→既存の直接ストリーミング経路で再生
+- `index.html` に viewport メタタグを追加（未設定だと iPhone は 980px 仮想幅で描画される）
+- バージョン v1.15.1（両HTML同期。demo側は 1.14.4 のまま取り残されていたのも修正）
+
+ローカル検証済み: デスクトップ＝従来どおり起動・cut-up 再生（デコードは選曲3曲のみ）、
+モバイルUAエミュレーション＝プリロード全スキップで即ボタン表示・再生開始・横スクロールなし。
+**実機 iPhone での確認はまだ**。R2 の CORS（音声 fetch は従来から同条件）も実機で要確認。
+
 前回ログ `SCENE_STATUS_2026-08-05.md` の続き。テスト環境の整備が済んだ状態から、
 画角統一 → オノマトペ駆動 → 環境統一 → Combination のメイン移行までを行った。
 **次の実装セッションはまずこのファイルを読むこと。**

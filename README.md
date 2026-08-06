@@ -1,13 +1,14 @@
 # skinslides-web
 
-An interactive video installation. Video and audio analysis data are projected into a
-shared 10-axis "texture" vector space, and the video shown next is chosen dynamically
-from onomatopoeia words detected in the audio as it plays. The same soundtrack produces
-a different combination of visuals every time it runs.
+Conceived as an "interface for a permanent preservation of the dancer's movements,"
+this video dance piece is based on the idea of producing images and sound first, and
+subsequently programming a data-choreography out of the single elements.
 
-- Sound: Otomo Yoshihide
-- Dance: Alessio Silvestrin
-- System re-engineering & AI logic: Richi Owaki, AI Agent
+While the original 2009 version featured three 1.8m x 0.9m acrylic screens embedded
+in the floor, the 2026 Web update utilizes advanced dynamic video and acoustic
+analysis to newly analyze the 55 video clips and sound assets. This allows the
+physical dynamics of the footage to sync asynchronously and organically with
+Yoshihide Otomo's soundtrack, weaving a brand-new, infinitely generated choreography.
 
 ## Running it locally
 
@@ -227,6 +228,18 @@ this system works on probabilistic affinity, not exact matching.
    presented to the viewer through the relationship map.
 
 ---
+
+## Credits
+
+- Construction: Richi Owaki
+- Performance: Alessio Silvestrin
+- Sound: Yoshihide Otomo
+- Original Programming: Satoshi Hama (YCAM InterLab)
+- Technical Support (2009): YCAM InterLab
+
+**2026 Web Reconstruction**
+
+- System Re-engineering & AI Logic: Richi Owaki, AI Agent
 
 ## License
 

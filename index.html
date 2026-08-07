@@ -67,7 +67,11 @@
             background: rgba(0,0,0,0.92);
             display: flex;
             flex-direction: column;
-            justify-content: center;
+            /* center だと内容がビューポートより高い時に上端がスクロール不能領域へ
+               はみ出し、タイトル・ボタンが隠れる(SNSアプリ内ブラウザ等)。
+               flex-start + 先頭/末尾要素の margin auto で「収まる時は中央・
+               あふれる時は上から積んでスクロール可能」にする。 */
+            justify-content: flex-start;
             align-items: center;
             z-index: 10000;
             cursor: default;
@@ -77,6 +81,9 @@
             box-sizing: border-box;
             transition: opacity 0.5s ease;
         }
+        /* タイトル上の余白(改行3個ぶん)。ブラウザ上部UIに隠れないための頭上スペース */
+        .overlay-headroom { margin-top: auto; line-height: 1.7; }
+        #start-overlay .license-notice { margin-bottom: auto; }
         .title {
             font-size: 2.2rem;
             margin-bottom: 25px;
@@ -106,6 +113,7 @@
 <body>
     <!-- 起動オーバーレイ: クレジット画面は従来のトップ画面のまま。ボタンは1つだけ。 -->
     <div id="start-overlay">
+        <div class="overlay-headroom"><br><br><br></div>
         <div class="title">skinslides:Motion Logic Core</div>
         <div class="start-btn" id="start-btn-el" style="display: none;">[clickto start seQuence]</div>
         <div id="overlay-preload-status-container" style="font-size: 14px; letter-spacing: 0.05em; color: #ff3366; margin-top: 15px; font-weight: bold; font-family: Helvetica, Arial, sans-serif; text-align: center;">

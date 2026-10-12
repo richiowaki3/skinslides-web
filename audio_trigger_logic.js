@@ -407,6 +407,11 @@ function logMessage(type, message) {
         dl.scrollTop = dl.scrollHeight;
         while (dl.children.length > 120) dl.removeChild(dl.firstChild);
     }
+
+    // #log-panel 本体にも上限を設け、無制限に溜まってDOMが肥大化→長時間で動画停止するのを防ぐ
+    while (logPanel.children.length > 200) {
+        logPanel.removeChild(logPanel.firstChild);
+    }
 }
 
 // Track loader

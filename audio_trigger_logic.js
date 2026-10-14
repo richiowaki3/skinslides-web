@@ -2075,9 +2075,33 @@ function attachVideoSpatialAudio(el, left, top, w, h) {
         src.connect(g);
         out.connect(audioCtx.destination);
         el.volume = 1.0;                                  // 実音量は gain 側で制御
+        // 破棄時に切断するためノードを保持(iOSはMediaElementSourceが溜まると枯渇し再生不能になる)。
+        el._spatialNodes = (out !== g) ? [src, g, out] : [src, g];
     } catch (e) {
         el.volume = Math.min(1, vol * (window.videoGainVolume || 1.0));  // パン無し代替
     }
+}
+
+// 動画要素を完全に解放する。DOMから外すだけではiOSがデコーダ/オーディオノードを手放さず、
+// コラージュのように毎秒生成する構成では約10秒で枯渇し黒画面になる。
+// 停止 → Web Audioノード切断 → src破棄+load() で、デコーダとノードを確実に解放する。
+function releaseVideoEl(video) {
+    if (!video) return;
+    try { video.pause(); } catch (e) {}
+    if (video._spatialNodes) {
+        video._spatialNodes.forEach(n => { try { n.disconnect(); } catch (e) {} });
+        video._spatialNodes = null;
+    }
+    try {
+        video.removeAttribute("src");
+        video.srcObject = null;
+        video.load();                                     // iOSはsrcを消してload()しないとデコーダを解放しない
+    } catch (e) {}
+}
+function releaseCollageWrapper(wrapperEl) {
+    if (!wrapperEl) return;
+    const v = wrapperEl.querySelector ? wrapperEl.querySelector("video") : null;
+    releaseVideoEl(v);
 }
 
 const FREEZE_FIB_SEC = [1, 1, 2, 3, 5];
@@ -2323,7 +2347,7 @@ function triggerCollageVideo(event, agentId) {
             // 新規を出す意味は無い(どちらも映らずに消えるだけ)。このトリガーは捨てる。
             // 音が詰まっている間は自然に発火が抑制され、枠が落ち着く。
             const victim = activeCollageSlots[targetIndex];
-            if (victim && !victim._shownAt) { wrapperEl.remove(); return; }
+            if (victim && !victim._shownAt) { releaseCollageWrapper(wrapperEl); wrapperEl.remove(); return; }
         }
         nextSlotIndex = (targetIndex + 1) % COLLAGE_SLOTS;
 
@@ -2331,7 +2355,7 @@ function triggerCollageVideo(event, agentId) {
         const oldWrapper = activeCollageSlots[targetIndex];
         if (oldWrapper) {
             oldWrapper.style.opacity = 0;
-            setTimeout(() => { oldWrapper.remove(); }, 500);
+            setTimeout(() => { releaseCollageWrapper(oldWrapper); oldWrapper.remove(); }, 500);
 
             // collageVideos からも古いものを除外
             const vIdx = collageVideos.indexOf(oldWrapper);
@@ -2356,6 +2380,8 @@ function triggerCollageVideo(event, agentId) {
 
 function clearCollageVideos() {
     if (collageContainer) {
+        // innerHTML="" だけではデコーダ/オーディオノードが残るため、各動画を明示的に解放する。
+        collageContainer.querySelectorAll("video").forEach(releaseVideoEl);
         collageContainer.innerHTML = "";
     }
     collageVideos = [];

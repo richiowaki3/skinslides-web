@@ -56,6 +56,13 @@ window.audioBufferCache = {}; // filename -> AudioBuffer（遅延デコード・
 const IS_MOBILE_DEVICE = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
     || (navigator.maxTouchPoints > 1 && /Mac/i.test(navigator.platform));
 
+// iOS判定（iPadOSのデスクトップ表示も含む）。iOS Safari は「非ミュート動画の自動再生」を
+// ユーザー操作なしに許可しないため、音声イベント起動のコラージュ動画が再生できず絵が出ない。
+// 動画音声は Web Audio 経由で鳴らしており、要素自体はミュートしても主音楽は鳴るので、
+// iOSではコラージュ動画要素をミュートして自動再生を通す（絵を出す）ことを優先する。
+const IS_IOS = /iPhone|iPad|iPod/i.test(navigator.userAgent)
+    || (navigator.maxTouchPoints > 1 && /Mac/i.test(navigator.platform));
+
 // cut-up が選曲に使う全トラックのファイル名リスト（プリロードはしない）
 window.cutupTrackFiles = [];
 function buildCutupTrackFileList() {
@@ -2047,7 +2054,8 @@ window.addDecisionLog = addDecisionLog; // player.jsからも呼べるように�
  *    停止秒数はフィボナッチ指標 (1,1,2,3,5秒) からランダム。
  * ===================================================================== */
 function attachVideoSpatialAudio(el, left, top, w, h) {
-    el.muted = window.videosMuted;
+    // iOSは非ミュート動画を自動再生できない→要素はミュート(音はWeb Audioが鳴らす/主音楽も別経路で継続)。
+    el.muted = window.videosMuted || IS_IOS;
     const long = Math.max(w, h);                          // 梯子の段の長辺(向きに依らない)
     const minL = SIZE_LADDER[SIZE_LADDER.length - 1].w;
     const maxL = SIZE_LADDER[0].w;

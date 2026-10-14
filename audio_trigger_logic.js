@@ -2658,7 +2658,7 @@ function enterTestLevel2() {
 
     const stage = document.getElementById("pipe-stage");
     const conveyor = document.getElementById("pipe-conveyor");
-    if (conveyor) conveyor.innerHTML = "";   // カードは絶対座標で配置(コンベアは静止コンテナ)
+    if (conveyor) { conveyor.querySelectorAll("video").forEach(releaseVideoEl); conveyor.innerHTML = ""; }   // カードは絶対座標で配置(コンベアは静止コンテナ)
     if (stage) stage.classList.add("active");
     if (normalScreensContainer) normalScreensContainer.style.display = "none";
     if (collageWrapper) collageWrapper.style.display = "none";
@@ -2676,7 +2676,7 @@ function exitTestLevel2() {
     const stage = document.getElementById("pipe-stage");
     const conveyor = document.getElementById("pipe-conveyor");
     if (stage) stage.classList.remove("active");
-    if (conveyor) conveyor.innerHTML = "";
+    if (conveyor) { conveyor.querySelectorAll("video").forEach(releaseVideoEl); conveyor.innerHTML = ""; }
     PIPE.flows = [];
     if (normalScreensContainer) normalScreensContainer.style.display = "";
     if (collageWrapper) collageWrapper.style.display = "";
@@ -2747,7 +2747,8 @@ function advanceFlow(f) {
     if (old && old.el) {
         old.el.classList.remove("show");
         const g = old.el;
-        setTimeout(() => { if (g && g.parentNode) g.parentNode.removeChild(g); }, 600);
+        // コラージュと同様、DOM除去だけではデコーダ/Web Audioノードが残り長時間で枯渇するため完全解放する。
+        setTimeout(() => { releaseVideoEl(g); if (g && g.parentNode) g.parentNode.removeChild(g); }, 600);
     }
     f.card = { el };
     f.lastFile = fileName;
@@ -2907,7 +2908,10 @@ const SPECIAL_VIDEOS = [90, 91, 92];
 const SPECIAL = { active: false, box: null, lastIdx: -1, onEnd: null };
 
 function specialTeardown() {
-    if (SPECIAL.box && SPECIAL.box.parentNode) SPECIAL.box.parentNode.removeChild(SPECIAL.box);
+    if (SPECIAL.box) {
+        SPECIAL.box.querySelectorAll("video").forEach(releaseVideoEl);
+        if (SPECIAL.box.parentNode) SPECIAL.box.parentNode.removeChild(SPECIAL.box);
+    }
     SPECIAL.box = null;
     if (audioElement) { try { audioElement.pause(); } catch (e) {} }
 }
@@ -2945,6 +2949,7 @@ function specialPlayOnce(next) {
     const settle = () => {
         if (done) return;
         done = true;
+        releaseVideoEl(vid);
         if (box.parentNode) box.parentNode.removeChild(box);
         if (SPECIAL.box === box) SPECIAL.box = null;
         next();

@@ -94,14 +94,16 @@
            そこでキャンバス(.display-area)自体を90°回転し、画面の長辺いっぱいに
            16:9 の作品を表示する(Webゲーム定番の手法・全端末で動作)。
            --app-scale は JS 側が「回転後に画面へ収まる倍率」で算出する。 */
+        /* 固定全画面にすると下のダッシュボード(グラフ/ログ)が覆われてスクロールで出せなくなるため、
+           通常フローのまま「回転後の高さ(=元の幅1920×scale)」だけ場所を確保する。
+           → 作品は回転・大サイズで最上部に表示、その下へスクロールするとUIが見える。 */
         body.force-landscape .display-area-wrapper {
-            position: fixed !important;
-            inset: 0 !important;
-            width: 100vw !important;
-            height: 100vh !important;
-            align-items: center !important;      /* 縦も中央寄せ(回転した作品を画面中央に) */
+            position: relative !important;
+            width: 100% !important;
+            height: calc(var(--canvas-w) * var(--app-scale, 1)) !important;
+            align-items: center !important;      /* 回転した作品を枠の中央に */
             justify-content: center !important;
-            z-index: 1 !important;
+            overflow: hidden !important;
         }
         body.force-landscape .display-area {
             transform: rotate(90deg) scale(var(--app-scale, 1)) !important;

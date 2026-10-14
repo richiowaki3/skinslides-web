@@ -1164,7 +1164,15 @@ async function playNextCutUpSlice(agentId) {
     }
     
     node.start(0, targetStartTime, targetDuration);
-    
+
+    // スライス終了時に必ずノードを切断する。これが無いと gain/panner が analyser にぶら下がり続け、
+    // 1〜8秒ごとの生成が15分で数百ノード積もって Web Audio グラフが破綻し、音が止まる。
+    node.onended = () => {
+        try { node.disconnect(); } catch (e) {}
+        try { sliceGain.disconnect(); } catch (e) {}
+        if (panner) { try { panner.disconnect(); } catch (e) {} }
+    };
+
     if (agentId === "AgentA") {
         cutUpNodeA = node;
         cutUpStartTimeA = targetStartTime;

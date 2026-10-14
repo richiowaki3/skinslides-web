@@ -89,6 +89,25 @@
             flex-shrink: 0 !important;
         }
 
+        /* ── モバイル縦持ち時の擬似ランドスケープロック ──────────────────
+           iOS Safari は screen.orientation.lock() 非対応で物理的な向き固定ができない。
+           そこでキャンバス(.display-area)自体を90°回転し、画面の長辺いっぱいに
+           16:9 の作品を表示する(Webゲーム定番の手法・全端末で動作)。
+           --app-scale は JS 側が「回転後に画面へ収まる倍率」で算出する。 */
+        body.force-landscape .display-area-wrapper {
+            position: fixed !important;
+            inset: 0 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            align-items: center !important;      /* 縦も中央寄せ(回転した作品を画面中央に) */
+            justify-content: center !important;
+            z-index: 1 !important;
+        }
+        body.force-landscape .display-area {
+            transform: rotate(90deg) scale(var(--app-scale, 1)) !important;
+            transform-origin: center center !important;
+        }
+
         /* Play A はコンバート対象外のため 3840x2160 の従来枠を維持する（見た目を変えない）。
            Combination には含まれないので、1:1シーンとの画角の不連続は起きない。 */
         body.plan-a {

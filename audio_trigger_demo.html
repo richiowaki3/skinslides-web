@@ -5,7 +5,7 @@
     <title>skinslides</title>
     <!-- Import Google Fonts -->
     
-    <link rel="stylesheet" href="skinslides.css?v=1.15.3">
+    <link rel="stylesheet" href="skinslides.css?v=1.15.4">
     <style>
         /* Start Overlay CSS */
         #start-overlay {
@@ -281,20 +281,37 @@
             //   ウィンドウ幅 <  1920 → その幅にフィット
             // 下限クランプを持たないため、どの画面幅でも切り取りが起きない。
             // 基準幅は --canvas-w から読むので、Play A(3840) も同じ式で正しく縮む。
-            const el = document.body || document.documentElement;
+            const docEl = document.documentElement;
+            const el = document.body || docEl;
             const baseW = parseFloat(getComputedStyle(el).getPropertyValue('--canvas-w')) || 1920;
+            const baseH = parseFloat(getComputedStyle(el).getPropertyValue('--canvas-h')) || 1080;
             // innerWidth は縦スクロールバー幅を含み1px単位の切り取り/横スクロールバーを生むため、
             // 実際の表示領域幅(clientWidth)を使う。
-            const viewW = document.documentElement.clientWidth || window.innerWidth;
-            document.documentElement.style.setProperty('--app-scale', Math.min(1, viewW / baseW));
+            const viewW = docEl.clientWidth || window.innerWidth;
+            const viewH = window.innerHeight || docEl.clientHeight;
+
+            // モバイル縦持ち → キャンバスを90°回転して横向きにフル表示(擬似ランドスケープロック)。
+            const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+                || (navigator.maxTouchPoints > 1 && /Mac/i.test(navigator.platform));
+            const portrait = viewH > viewW;
+
+            if (isMobile && portrait && document.body) {
+                document.body.classList.add('force-landscape');
+                const scale = Math.min(viewH / baseW, viewW / baseH);
+                docEl.style.setProperty('--app-scale', scale);
+            } else {
+                if (document.body) document.body.classList.remove('force-landscape');
+                docEl.style.setProperty('--app-scale', Math.min(1, viewW / baseW));
+            }
         }
         window.updateAppScale = updateAppScale;   // Play A 選択時に基準幅を切り替えるため
         window.addEventListener('resize', updateAppScale);
+        window.addEventListener('orientationchange', updateAppScale);
         window.addEventListener('DOMContentLoaded', updateAppScale);
         updateAppScale();
     </script>
-    <script src="player.js?v=1.15.3"></script>
-    <script src="audio_trigger_logic.js?v=1.15.3"></script>
-    <script src="lexicon_live.js?v=1.15.3"></script>
+    <script src="player.js?v=1.15.4"></script>
+    <script src="audio_trigger_logic.js?v=1.15.4"></script>
+    <script src="lexicon_live.js?v=1.15.4"></script>
 </body>
 </html>

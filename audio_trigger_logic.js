@@ -141,6 +141,15 @@ async function loadMetadata() {
             console.log("[demo] Local videos not found. Using Cloudflare R2.");
         }
 
+        // ローカル検出で画質が決まらなかった＝R2経路。モバイルは回線が細く再生開始が遅いので
+        // 360pを強制し、コラージュ枠が3秒の猶予内に再生開始できる確率を上げる。
+        // (デスクトップのR2経路は未設定のまま→既定の Sss720p を使う)
+        if (!window.VIDEO_QUALITY_SUFFIX && IS_MOBILE_DEVICE) {
+            window.VIDEO_QUALITY_SUFFIX = "Sss360p";
+            console.log("[demo] Mobile device on R2: forcing 360p (Sss360p) for faster start.");
+            addDecisionLog("Mobile device: forcing 360p videos (faster start, more tiles visible).", "success");
+        }
+
         // プリロード用の動画要素プールを初期化
         players.forEach(p => p.initializePool(VIDEO_BASE_PATH));
 
@@ -737,7 +746,9 @@ const COLLAGE_H = 1080;
 // 開始する前に押し出されるため、一度も絵が出ない枠が大量に発生していた。
 // 枠を増やすだけでは足りない(10秒滞在には108枠必要)ため、発火自体を間引く。
 //   実効滞在 ≈ COLLAGE_SLOTS × COLLAGE_MIN_GAP_MS
-const COLLAGE_SLOTS = 6;            // 同時表示数(従来4枠の1.5倍)
+// モバイルは同時デコード本数の上限(特にiOS Safari)が低いため、枠を4に減らして
+// 「用意した枠が全部映る」状態に寄せる。デスクトップは従来どおり6枠。
+const COLLAGE_SLOTS = IS_MOBILE_DEVICE ? 4 : 6;   // 同時表示数(モバイル4 / デスクトップ6)
 const COLLAGE_MIN_GAP_MS = 250;     // 通常イベントの最小発火間隔(軽い debounce)
 const COLLAGE_STRONG_GAP_MS = 120;  // 強いイベント(アタック)は詰めて出してよい
 let lastCollageSpawnAt = 0;

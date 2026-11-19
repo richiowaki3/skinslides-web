@@ -730,6 +730,7 @@ const normalScreensContainer = document.getElementById("normal-screens-container
 let collageVideos = [];
 let collageZIndex = 1;
 let lastBox = null; // 直前に配置された動画の実際の可視バウンディングボックス
+let lastSizeIdx = null; // 直前に使ったサイズ梯子の段(連続で同じ段を出さないため。null=まだ1枚も出していない)
 
 // 統一サイズ梯子（全シーン共通・約0.618倍ずつの6段）。
 // Play B のタイルも test-level2 のパイプカードもこの梯子の中でリサイズされる。
@@ -873,6 +874,7 @@ function startCutUpPlayback() {
     // Clear any previous collage videos and state
     clearCollageVideos();
     lastBox = null;
+    lastSizeIdx = null;
     activeCollageSlots = new Array(COLLAGE_SLOTS).fill(null);
     nextSlotIndex = 0;
     lastCollageSpawnAt = 0;
@@ -920,8 +922,9 @@ function stopCutUpPlayback() {
     // Clear collage videos and state
     clearCollageVideos();
     lastBox = null;
+    lastSizeIdx = null;
     activeCollageSlots = new Array(COLLAGE_SLOTS).fill(null);
-    
+
     // Clear idle timer
     if (idleTimer) {
         clearTimeout(idleTimer);
@@ -2198,83 +2201,98 @@ function triggerCollageVideo(event, agentId) {
     const blobUrl = window.videoBlobCache[fileName] || (VIDEO_BASE_PATH + finalFileName);
     
     // 統一サイズ梯子から1段選ぶ(アスペクト比 1:2 / 2:1 は梯子が保証)。
+    // サイズ: 最初の1枚だけ基準サイズ(梯子最上段=最大)に固定し、以降は梯子から選ぶ。
+    // ただし「直前と同じ段」は選ばない — 乱数が偶然最小段に偏り「最小サイズが何ターンも
+    // 続く」状態を防ぐため、毎回必ず前回と異なる段へ変える。
+    let sizeIdx;
+    if (lastSizeIdx === null) {
+        sizeIdx = 0; // 一番最初は固定(最大段)
+    } else {
+        // 直前の段を除いた残り段から等確率に選ぶ
+        sizeIdx = Math.floor(Math.random() * (SIZE_LADDER.length - 1));
+        if (sizeIdx >= lastSizeIdx) sizeIdx += 1;
+    }
+    lastSizeIdx = sizeIdx;
+    const step = SIZE_LADDER[sizeIdx];
     // 縦向きはキャンバス高(1080)に収まる段のみ — 1240段を縦にすると突き抜けるため横固定。
-    const step = SIZE_LADDER[Math.floor(Math.random() * SIZE_LADDER.length)];
     const isVertical = Math.random() < 0.5 && step.w <= COLLAGE_H;
     const visW = isVertical ? step.h : step.w;
     const visH = isVertical ? step.w : step.h;
     
-    let newVLeft = 0;
-    let newVTop = 0;
-    let placedSuccessfully = false;
-    
-    // 境界を 3840x2160 キャンバスに適用して接続先を計算
-    if (lastBox) {
-        const sides = ["top", "bottom", "left", "right"];
-        const oppositeOfLast = {
-            "top": "bottom",
-            "bottom": "top",
-            "left": "right",
-            "right": "left"
-        };
+    // ── 配置: 表示中の全タイルとの重なりを最小化する ────────────────────
+    // 旧実装は直前の1枚(lastBox)の辺にだけ繋げており、他の表示中タイルと重なり得た。
+    // ここでは候補位置を多数作り、現在表示中の全ボックスとの重なり面積が最小の位置を選ぶ。
+    // できる限り lastBox の辺へ接続する「数珠つなぎ」を優先しつつ、空きがあればそちらへ飛ぶ。
+    const aliveBoxes = [];
+    for (const w of activeCollageSlots) {
+        if (w && w._box) aliveBoxes.push(w._box);
+    }
+    const overlapAreaAt = (l, t) => {
+        const r = l + visW, b = t + visH;
+        let area = 0;
+        for (const o of aliveBoxes) {
+            const ox = Math.min(r, o.r) - Math.max(l, o.l);
+            const oy = Math.min(b, o.b) - Math.max(t, o.t);
+            if (ox > 0 && oy > 0) area += ox * oy;
+        }
+        return area;
+    };
+
+    const SHIFTS = [-21, -13, -8, 0, 8, 13, 21];
+    const candidates = [];
+    // (1) 数珠つなぎ候補: lastBox の各辺（直前の進行方向の逆戻りは除外）
+    if (lastBox && lastBox.vRight !== undefined) {
+        const oppositeOfLast = { top: "bottom", bottom: "top", left: "right", right: "left" };
         const forbiddenSide = oppositeOfLast[lastBox.exitSide] || "";
-        const allowedSides = sides.filter(s => s !== forbiddenSide);
-        
-        // 3辺をランダムにシャッフル
-        allowedSides.sort(() => Math.random() - 0.5);
-        
-        for (let side of allowedSides) {
-            const shift = [-21, -13, -8, 0, 8, 13, 21][Math.floor(Math.random() * 7)];
-            
-            if (side === "right") {
-                newVLeft = lastBox.vRight;
-                newVTop = lastBox.vTop + shift;
-            } else if (side === "left") {
-                newVLeft = lastBox.vLeft - visW;
-                newVTop = lastBox.vTop + shift;
-            } else if (side === "top") {
-                newVTop = lastBox.vTop - visH;
-                newVLeft = lastBox.vLeft + shift;
-            } else if (side === "bottom") {
-                newVTop = lastBox.vBottom;
-                newVLeft = lastBox.vLeft + shift;
-            }
-            
-            // 安全領域内 (3840x2160 境界内) に収まるかチェック
-            const rightBound = newVLeft + visW;
-            const bottomBound = newVTop + visH;
-
-            if (newVLeft >= 0 && rightBound <= COLLAGE_W && newVTop >= 0 && bottomBound <= COLLAGE_H) {
-                placedSuccessfully = true;
-                lastBox.exitSide = side; // 新しい進行方向を exitSide に上書き記録
-                break;
+        for (const side of ["top", "bottom", "left", "right"]) {
+            if (side === forbiddenSide) continue;
+            for (const shift of SHIFTS) {
+                let l, t;
+                if (side === "right")      { l = lastBox.vRight;      t = lastBox.vTop + shift; }
+                else if (side === "left")  { l = lastBox.vLeft - visW; t = lastBox.vTop + shift; }
+                else if (side === "top")   { t = lastBox.vTop - visH;  l = lastBox.vLeft + shift; }
+                else                       { t = lastBox.vBottom;      l = lastBox.vLeft + shift; }
+                if (l >= 0 && l + visW <= COLLAGE_W && t >= 0 && t + visH <= COLLAGE_H) {
+                    candidates.push({ l, t, side, chain: true });
+                }
             }
         }
     }
-
-    // 3840x2160 のウィンドウの辺にくっつける
-    if (!placedSuccessfully) {
-        // Always start spawning from the top edge to prevent large top blank spaces (Plan B display from top)
-        const startEdge = ["left", "right", "top"][Math.floor(Math.random() * 3)];
-        if (startEdge === "left") {
-            newVLeft = 0;
-            newVTop = 0;
-        } else if (startEdge === "right") {
-            newVLeft = COLLAGE_W - visW;
-            newVTop = 0;
-        } else { // top
-            newVTop = 0;
-            newVLeft = Math.random() * (COLLAGE_W - visW);
+    // (2) 空き探索候補: キャンバス全体をグリッド走査（数珠つなぎで空きが無い時の逃げ場）
+    const gxStep = Math.max(80, Math.floor((COLLAGE_W - visW) / 10) || 1);
+    const gyStep = Math.max(80, Math.floor((COLLAGE_H - visH) / 8) || 1);
+    for (let gx = 0; gx <= COLLAGE_W - visW; gx += gxStep) {
+        for (let gy = 0; gy <= COLLAGE_H - visH; gy += gyStep) {
+            candidates.push({ l: gx, t: gy, side: "start", chain: false });
         }
-        lastBox = { exitSide: "start" };
+    }
+    if (candidates.length === 0) {
+        candidates.push({ l: Math.max(0, Math.random() * (COLLAGE_W - visW)), t: 0, side: "start", chain: false });
     }
 
-    // ウィンドウの辺に近づいたらぴったりくっつける（3840x2160スナップ処理）
+    // 各候補の重なり面積を求め、最小の候補群から選ぶ。
+    // 同点なら数珠つなぎ(chain)を優先し、さらに同点ならランダム。
+    let minScore = Infinity;
+    for (const c of candidates) {
+        c.score = overlapAreaAt(c.l, c.t);
+        if (c.score < minScore) minScore = c.score;
+    }
+    const atMin = candidates.filter(c => c.score <= minScore + 0.5);
+    const chainAtMin = atMin.filter(c => c.chain);
+    const poolSel = chainAtMin.length ? chainAtMin : atMin;
+    const pick = poolSel[Math.floor(Math.random() * poolSel.length)];
+
+    let newVLeft = pick.l;
+    let newVTop = pick.t;
+    if (!lastBox) lastBox = {};
+    lastBox.exitSide = pick.chain ? pick.side : "start";
+
+    // ウィンドウの辺に近づいたらぴったりくっつける（スナップ処理）
     if (Math.abs(newVLeft - 0) < 15) newVLeft = 0;
     if (Math.abs((newVLeft + visW) - COLLAGE_W) < 15) newVLeft = COLLAGE_W - visW;
     if (Math.abs(newVTop - 0) < 15) newVTop = 0;
     if (Math.abs((newVTop + visH) - COLLAGE_H) < 15) newVTop = COLLAGE_H - visH;
-    
+
     // 今回表示される可視バウンディングボックスを次回の参照用に保存
     lastBox.vLeft = newVLeft;
     lastBox.vTop = newVTop;
@@ -2288,6 +2306,7 @@ function triggerCollageVideo(event, agentId) {
     wrapperEl.style.height = `${visH}px`;
     wrapperEl.style.left = `${newVLeft}px`;
     wrapperEl.style.top = `${newVTop}px`;
+    wrapperEl._box = { l: newVLeft, t: newVTop, r: newVLeft + visW, b: newVTop + visH }; // 重なり判定用
     wrapperEl.style.overflow = "hidden";
     wrapperEl.style.opacity = "0"; // 映像の再生開始まで非表示にし、白い外枠フラッシュを防ぐ
     wrapperEl.style.zIndex = collageZIndex++;

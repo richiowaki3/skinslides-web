@@ -833,6 +833,11 @@ let cutUpDurationB = 0;
 let cutUpEventsB = [];
 let playbackStartTimeB = 0;
 
+// スライスごとのステレオ振り分け: Slicerを常に左へ固定すると激しいシーンが左に偏るため、
+// 各エージェントのパンをスライスごとに左右交互に入れ替える（AとBは逆位相で開始し分離を保つ）。
+let panSideA = -1; // Agent A はまず左から
+let panSideB = 1;  // Agent B はまず右から
+
 function startCutUpPlayback() {
     initAudioContext();
     if (isPlaying) {
@@ -854,7 +859,7 @@ function startCutUpPlayback() {
     
     const agentLabelA = document.getElementById("timeline-agent-label-a");
     if (agentLabelA) {
-        agentLabelA.innerHTML = `Agent A (Slicer / Left): <span id="ana-track-name-a" style="color: var(--text-muted); font-weight: normal;">None</span>`;
+        agentLabelA.innerHTML = `Agent A (Slicer): <span id="ana-track-name-a" style="color: var(--text-muted); font-weight: normal;">None</span>`;
     }
     
     // Show duet collage wrapper and hide normal screens container
@@ -1150,10 +1155,13 @@ async function playNextCutUpSlice(agentId) {
     sliceGain.gain.setValueAtTime(1.0, now + targetDuration - 0.02);
     sliceGain.gain.linearRampToValueAtTime(0, now + targetDuration); // 20ms fade-out
     
-    // Stereo panner: Slicer -> Left, Ambient -> Right
+    // Stereo panner: スライスごとに左右を交互に入れ替えて片寄りを解消する
     const panner = audioCtx.createStereoPanner ? audioCtx.createStereoPanner() : null;
     if (panner) {
-        const panVal = agentId === "AgentA" ? (-0.6 - Math.random() * 0.2) : (0.6 + Math.random() * 0.2);
+        let side;
+        if (agentId === "AgentA") { side = panSideA; panSideA = -panSideA; }
+        else { side = panSideB; panSideB = -panSideB; }
+        const panVal = side * (0.6 + Math.random() * 0.2);
         panner.pan.setValueAtTime(panVal, now);
         node.connect(sliceGain);
         sliceGain.connect(panner);

@@ -974,8 +974,47 @@ const FIX_SOLO_TRACKS = new Set(["t525fix", "t526fix", "t527fix"]);
 // fix枠 → センター投影する特殊動画（720p・回転無し）の番号。番号順で対応。
 const SOLO_VIDEO_MAP = { "t525fix": "90", "t526fix": "91", "t527fix": "92" };
 
-// ソロ用: 特殊動画を画面センターに投影（コラージュは隠す）。全尺(約7分)再生後は
-// 音トラック終了→次スライスで非fixが選ばれてソロ解除され、自動で通常シーンへ戻る。
+// ソロシーン開始: Agent A/B の音スライス再生を止め、特殊動画をネイティブ音声で全尺再生する。
+// 音トラック(T525fix 等)は使わない。動画 90/91/92 に同じ音が録音されているため。
+function startSoloScene(normName, randomFile) {
+    soloBActive = true;
+    // Agent A を停止（音・映像・次スライス予約をクリア）
+    if (cutUpTimerA) { clearTimeout(cutUpTimerA); cutUpTimerA = null; }
+    if (cutUpNodeA) { try { cutUpNodeA.stop(); } catch (e) {} cutUpNodeA = null; }
+    cutUpVideoTimeoutsA.forEach(t => clearTimeout(t));
+    cutUpVideoTimeoutsA = [];
+    // Agent B の直前スライスも停止（ソロ中は動画のネイティブ音声のみ）
+    if (cutUpTimerB) { clearTimeout(cutUpTimerB); cutUpTimerB = null; }
+    if (cutUpNodeB) { try { cutUpNodeB.stop(); } catch (e) {} cutUpNodeB = null; }
+    cutUpVideoTimeoutsB.forEach(t => clearTimeout(t));
+    cutUpVideoTimeoutsB = [];
+
+    const elA = document.getElementById("ana-track-name-a");
+    if (elA) elA.textContent = "— paused (solo)";
+    const elB = document.getElementById("ana-track-name-b");
+    if (elB) elB.textContent = `${randomFile} (solo / video audio)`;
+    if (window.LexMap) { LexMap.setTrack("A", ""); LexMap.setTrack("B", ""); }
+
+    showSoloVideo(normName); // 特殊動画をネイティブ音声で全尺再生
+    logMessage("CONTROL", `[AGENT B] Solo scene: ${randomFile} — 動画のネイティブ音声で再生 / Agent A 停止`);
+}
+
+// ソロ解除: 特殊動画を消し、通常のカットアップシーンへ戻る。
+function endSoloScene(reason) {
+    if (!soloBActive) return;
+    soloBActive = false;
+    hideSoloVideo();
+    logMessage("CONTROL", `Solo scene ended (${reason}) — resuming cut-up`);
+    setTimeout(() => {
+        if (isCutUpPlaying) {
+            playNextCutUpSlice("AgentA");
+            playNextCutUpSlice("AgentB");
+        }
+    }, 50);
+}
+
+// ソロ用: 特殊動画を画面センターに投影（コラージュは隠す）。音トラックは使わず、
+// 動画のネイティブ音声で全尺再生し、再生終了(onended)で自動的に通常シーンへ戻る。
 function showSoloVideo(normName) {
     const wrap = document.getElementById("solo-video-wrap");
     const vid = document.getElementById("solo-video");
@@ -986,9 +1025,18 @@ function showSoloVideo(normName) {
     const soloSuffix = window.VIDEO_QUALITY_SUFFIX || "Sss720p";
     vid.src = VIDEO_BASE_PATH + `${num}-${soloSuffix}.mp4` + (window.VIDEO_CACHE_BUST || "");
     vid.loop = false;
+    vid.muted = false;   // 動画のネイティブ音声を再生（音トラックは使わない）
+    vid.volume = 1.0;
     wrap.classList.add("active");
     if (collageContainer) collageContainer.style.opacity = "0";
-    vid.play().catch(e => console.warn("[demo] solo video play failed:", e));
+    // 全尺再生が終わったら自動でソロ解除し通常シーンへ戻る
+    vid.onended = () => endSoloScene("video finished");
+    // 動画が読み込めない等で再生できない場合も通常シーンへ復帰させる（スタック防止）
+    vid.onerror = () => endSoloScene("video error");
+    vid.play().catch(e => {
+        console.warn("[demo] solo video play failed:", e);
+        endSoloScene("play rejected");
+    });
 }
 function hideSoloVideo() {
     const wrap = document.getElementById("solo-video-wrap");
@@ -1016,6 +1064,22 @@ async function playNextCutUpSlice(agentId) {
         if (pickKeys.length === 0) pickKeys = fileKeys;
     }
     const randomFile = pickKeys[Math.floor(Math.random() * pickKeys.length)];
+    const normName = randomFile.replace(/\.(aif|aiff|mp3|wav)$/i, "").toLowerCase();
+    const isBSolo = (agentId === "AgentB") && FIX_SOLO_TRACKS.has(normName);
+
+    // ソロ中は Agent A を再生しない（ソロ動画の終了時に自動で再開される）
+    if (agentId === "AgentA" && soloBActive) {
+        return;
+    }
+
+    // --- Agent B ノンストップ枠 (T525fix/T526fix/T527fix) ---
+    // 音声ファイルは使わない（R2 に存在せず、同じ音は動画 90/91/92 に録音済み）。
+    // 動画のネイティブ音声で全尺再生し、終了したら通常シーンへ自動復帰する。
+    if (isBSolo) {
+        if (!soloBActive) startSoloScene(normName, randomFile);
+        return; // 音トラックのデコード・スライス再生は行わない
+    }
+
     // 遅延デコード: この曲の AudioBuffer をここで取得（キャッシュ済みなら即時）
     const audioBuffer = await getAudioBuffer(randomFile);
     if (!isCutUpPlaying) return; // デコード待ちの間に停止された
@@ -1032,36 +1096,6 @@ async function playNextCutUpSlice(agentId) {
         const normRandFile = randomFile.replace(/\.mp3$/i, '').toLowerCase();
         return normFileId === normRandFile;
     });
-
-    // --- Agent B ノンストップ枠 (T525fix/T526fix/T527fix) ---
-    const normName = randomFile.replace(/\.(aif|aiff|mp3|wav)$/i, "").toLowerCase();
-    const isBSolo = (agentId === "AgentB") && FIX_SOLO_TRACKS.has(normName);
-
-    // ソロ中は Agent A を再生しない（解除時に B が再開させる）
-    if (agentId === "AgentA" && soloBActive) {
-        return;
-    }
-    if (agentId === "AgentB") {
-        if (isBSolo && !soloBActive) {
-            // ソロ開始: Agent A を停止（音・映像・次スライス予約をクリア）
-            soloBActive = true;
-            if (cutUpTimerA) { clearTimeout(cutUpTimerA); cutUpTimerA = null; }
-            if (cutUpNodeA) { try { cutUpNodeA.stop(); } catch (e) {} cutUpNodeA = null; }
-            cutUpVideoTimeoutsA.forEach(t => clearTimeout(t));
-            cutUpVideoTimeoutsA = [];
-            const elA = document.getElementById("ana-track-name-a");
-            if (elA) elA.textContent = `— paused (${randomFile} solo)`;
-            if (window.LexMap) LexMap.setTrack("A", "");
-            showSoloVideo(normName); // fix枠に対応する特殊動画を720p・回転無し・センター投影
-            logMessage("CONTROL", `[AGENT B] Nonstop solo: ${randomFile} — Agent A paused`);
-        } else if (!isBSolo && soloBActive) {
-            // ソロ解除: 特殊動画を消してコラージュへ戻り、Agent A を再開
-            soloBActive = false;
-            hideSoloVideo();
-            logMessage("CONTROL", "Agent B solo ended — resuming Agent A");
-            setTimeout(() => { if (isCutUpPlaying) playNextCutUpSlice("AgentA"); }, 50);
-        }
-    }
 
     // フィボナッチ数列による再生尺（秒）の決定
     const FIBONACCI_SECS = [1, 2, 3, 5, 8, 13, 21, 34, 55, 89];
@@ -1080,9 +1114,6 @@ async function playNextCutUpSlice(agentId) {
         const pool = validFibs.slice(splitIndex);
         targetDuration = pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : validFibs[validFibs.length - 1];
     }
-
-    // ノンストップ枠は全尺再生（スライスせず頭から最後まで）
-    if (isBSolo) targetDuration = audioBuffer.duration;
 
     let targetStartTime = 0.0;
     let events = [];
@@ -1123,20 +1154,6 @@ async function playNextCutUpSlice(agentId) {
             }));
     }
     
-    // ノンストップ枠は全尺を先頭から途切れず再生（スライスせず全イベントを使う）
-    if (isBSolo) {
-        targetStartTime = 0;
-        targetDuration = audioBuffer.duration;
-        events = (trackData && trackData.triggers.events ? trackData.triggers.events : []).map((e, index) => ({
-            id: `cutup_event_${index}_${Date.now()}_${agentId}`,
-            time_sec: e.time_sec,
-            type: e.type,
-            strength: e.strength,
-            onomatopoeia: e.onomatopoeia,
-            triggered: false
-        }));
-    }
-
     const agentLabel = agentId === "AgentA" ? "AGENT A (Slicer)" : "AGENT B (Ambient)";
     logMessage("CUT-UP", `[${agentLabel}] Playing slice: ${randomFile} [${targetStartTime.toFixed(1)}s - ${(targetStartTime + targetDuration).toFixed(1)}s] (${targetDuration.toFixed(1)}s)`);
     
